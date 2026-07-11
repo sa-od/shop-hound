@@ -17,6 +17,7 @@
     "node": ">=22.13.0"
   },
   "dependencies": {
+    "@libsql/client": "^0.17.4",
     "@mastra/core": "^1.45.0",
     "@mastra/duckdb": "^1.5.0",
     "@mastra/evals": "^1.4.0",
@@ -24,6 +25,8 @@
     "@mastra/loggers": "^1.2.0",
     "@mastra/memory": "^1.21.0",
     "@mastra/observability": "^1.15.0",
+    "@mastra/qdrant": "^1.1.1",
+    "ai": "^6.0.224",
     "zod": "^4.4.3"
   },
   "devDependencies": {
