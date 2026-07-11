@@ -12,7 +12,9 @@ import type { CompetitorDiff, CompetitorSnapshot, NormalizedProduct } from './ty
  * 3. Leftovers → genuinely new / removed SKUs.
  */
 
-const SEMANTIC_MATCH_THRESHOLD = 0.9;
+// Tuned for Qwen3-Embedding space: renamed-same-product ≈ 0.98, similar-but-
+// different products ≈ 0.89. 0.93 gives margin on both sides.
+const SEMANTIC_MATCH_THRESHOLD = 0.93;
 
 export async function diffSnapshots(
   current: CompetitorSnapshot,

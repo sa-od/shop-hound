@@ -17,6 +17,7 @@
     "node": ">=22.13.0"
   },
   "dependencies": {
+    "@ai-sdk/openai-compatible": "^2.0.59",
     "@libsql/client": "^0.17.4",
     "@mastra/core": "^1.45.0",
     "@mastra/duckdb": "^1.5.0",

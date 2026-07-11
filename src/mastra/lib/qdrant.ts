@@ -1,5 +1,5 @@
 import { QdrantVector } from '@mastra/qdrant';
-import { EMBEDDING_DIMENSION } from './embeddings';
+import { embeddingDimension } from './embeddings';
 
 // Long-term memory (PRD §5.2): product vectors, brief archive, and durable
 // snapshot records (diff baselines must survive redeploys — cloud disks are ephemeral)
@@ -48,10 +48,11 @@ export async function upsertBatched(args: {
 export async function ensureCollections(): Promise<void> {
   if (ensured) return;
   const existing = await qdrant.listIndexes();
+  const dimension = await embeddingDimension();
 
   for (const indexName of [COMPETITOR_PRODUCTS, GROWTH_BRIEFS, SNAPSHOT_RECORDS]) {
     if (!existing.includes(indexName)) {
-      await qdrant.createIndex({ indexName, dimension: EMBEDDING_DIMENSION, metric: 'cosine' });
+      await qdrant.createIndex({ indexName, dimension, metric: 'cosine' });
     }
   }
 
