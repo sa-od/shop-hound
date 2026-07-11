@@ -8,8 +8,9 @@ import {
 } from '../lib/types';
 import { scrapeShopifyCatalog, normalizeDomain } from '../lib/scraper';
 import { embedProducts, embedText } from '../lib/embeddings';
-import { qdrant, ensureCollections, COMPETITOR_PRODUCTS, GROWTH_BRIEFS } from '../lib/qdrant';
-import { saveSnapshot, getPreviousSnapshot, saveBrief } from '../lib/intel-db';
+import { qdrant, ensureCollections, upsertBatched, COMPETITOR_PRODUCTS, GROWTH_BRIEFS } from '../lib/qdrant';
+import { saveSnapshot, saveBrief } from '../lib/intel-db';
+import { saveSnapshotRecord, getPreviousSnapshotRecord } from '../lib/snapshot-store';
 import { diffSnapshots, verifyDiffAgainstPayload } from '../lib/diff-engine';
 import { groundingCheck, safetyAudit } from '../lib/enkrypt';
 
@@ -27,13 +28,20 @@ const DEFAULT_COMPETITORS = (process.env.COMPETITOR_STORES ?? '')
   .map(s => s.trim())
   .filter(Boolean);
 
+// Shared input schema — same instance for the workflow and its first step so
+// the chained types line up exactly.
+const workflowInputSchema = z.object({
+  competitors: z
+    .array(z.string())
+    .optional()
+    .describe('Competitor Shopify store domains, e.g. ["allbirds.com"]. Empty → COMPETITOR_STORES env var.'),
+});
+
 // ── Step 1: Ingestion — scrape every competitor; failures become "unverified" ──
 
 const scrapeStep = createStep({
   id: 'scrape-competitors',
-  inputSchema: z.object({
-    competitors: z.array(z.string()).describe('Competitor store domains, e.g. ["allbirds.com"]'),
-  }),
+  inputSchema: workflowInputSchema,
   outputSchema: z.object({
     snapshots: z.array(competitorSnapshotSchema),
     unverified: z.array(z.string()),
@@ -41,9 +49,8 @@ const scrapeStep = createStep({
   }),
   execute: async ({ inputData }) => {
     const snapshotDate = new Date().toISOString().slice(0, 10);
-    const competitors = (inputData.competitors.length > 0 ? inputData.competitors : DEFAULT_COMPETITORS).map(
-      normalizeDomain,
-    );
+    const requested = inputData.competitors ?? [];
+    const competitors = (requested.length > 0 ? requested : DEFAULT_COMPETITORS).map(normalizeDomain);
     if (competitors.length === 0) {
       throw new Error('No competitors configured. Pass `competitors` or set COMPETITOR_STORES in .env');
     }
@@ -83,7 +90,7 @@ const embedAndSnapshotStep = createStep({
 
     for (const snapshot of inputData.snapshots) {
       const vectors = await embedProducts(snapshot.products);
-      await qdrant.upsert({
+      vectorsUpserted += await upsertBatched({
         indexName: COMPETITOR_PRODUCTS,
         vectors,
         metadata: snapshot.products.map(p => ({
@@ -96,8 +103,8 @@ const embedAndSnapshotStep = createStep({
           productType: p.productType,
         })),
       });
-      vectorsUpserted += vectors.length;
-      await saveSnapshot(snapshot); // "Save Normalized Data" → Main DB
+      await saveSnapshotRecord(snapshot); // durable diff baseline → Qdrant
+      await saveSnapshot(snapshot).catch(err => console.warn('[intel-db] local mirror failed:', err)); // local relational mirror
     }
     return { ...inputData, vectorsUpserted };
   },
@@ -118,7 +125,7 @@ const diffStep = createStep({
     const groundingErrors: string[] = [];
 
     for (const snapshot of inputData.snapshots) {
-      const previous = await getPreviousSnapshot(snapshot.competitor, snapshot.snapshotDate);
+      const previous = await getPreviousSnapshotRecord(snapshot.competitor, snapshot.snapshotDate);
       const diff = await diffSnapshots(snapshot, previous);
       // Deterministic grounding pre-check: numbers must map to the payload
       groundingErrors.push(...verifyDiffAgainstPayload(diff, snapshot, previous));
@@ -259,7 +266,7 @@ const persistStep = createStep({
             weekOf: inputData.diff.weekOf,
             briefId,
             greenLight: true,
-            summary: inputData.brief.slice(0, 2000),
+            briefMarkdown: inputData.brief, // full text — Qdrant is the durable archive
           },
         ],
       });
@@ -279,12 +286,7 @@ const persistStep = createStep({
 
 export const competitiveIntelWorkflow = createWorkflow({
   id: 'competitive-intel-workflow',
-  inputSchema: z.object({
-    competitors: z
-      .array(z.string())
-      .default([])
-      .describe('Competitor Shopify store domains. Empty → COMPETITOR_STORES env var.'),
-  }),
+  inputSchema: workflowInputSchema,
   outputSchema: persistStep.outputSchema,
   schedule: {
     cron: '0 9 * * 1', // every Monday 09:00 — weekly cadence (PRD §13)

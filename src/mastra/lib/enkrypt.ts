@@ -91,21 +91,66 @@ export async function groundingCheck(diffText: string): Promise<GuardrailVerdict
 }
 
 /**
- * SAFETY checkpoint (output side) — two Enkrypt calls:
- *  1. /guardrails/hallucination — every claim in the brief must be grounded in
- *     the structured diff (context). PRD success metric: 0% hallucination.
- *  2. /guardrails/detect — bias framing + policy violations (price-fixing, ToS).
+ * Deterministic numeric grounding: every dollar amount and percentage in the
+ * brief must literally exist in the structured diff. Used as the primary
+ * hallucination check while Enkrypt's /guardrails/hallucination endpoint is
+ * rolling out (currently 503 "coming soon"), and as defense-in-depth after.
+ */
+export function verifyNumericGrounding(brief: string, diffContext: string): string[] {
+  // All numeric tokens appearing anywhere in the diff JSON (incl. inside strings)
+  const allowed = new Set<number>();
+  for (const m of diffContext.matchAll(/-?\d+(?:\.\d+)?/g)) {
+    allowed.add(Math.abs(Number.parseFloat(m[0])));
+  }
+  // Section counts are legitimate derived numbers ("3 new SKUs")
+  try {
+    const diff = JSON.parse(diffContext);
+    for (const d of diff.diffs ?? []) {
+      for (const key of ['newSkus', 'removedSkus', 'priceChanges', 'titleChanges']) {
+        allowed.add((d[key] ?? []).length);
+      }
+    }
+    allowed.add((diff.unverified ?? []).length);
+  } catch {
+    // context not JSON — string token matching above still applies
+  }
+
+  const violations: string[] = [];
+  // Only currency amounts and percentages — the fabrication risk the PRD targets
+  for (const m of brief.matchAll(/\$\s?(\d[\d,]*(?:\.\d+)?)|(-?\d+(?:\.\d+)?)\s?%/g)) {
+    const raw = (m[1] ?? m[2]).replace(/,/g, '');
+    const value = Math.abs(Number.parseFloat(raw));
+    if (!allowed.has(value)) {
+      violations.push(`ungrounded number in brief: "${m[0].trim()}" does not appear in the verified diff`);
+    }
+  }
+  return violations;
+}
+
+/**
+ * SAFETY checkpoint (output side) — two checks:
+ *  1. Grounding audit — Enkrypt /guardrails/hallucination when available,
+ *     deterministic numeric verification as fallback. PRD metric: 0% hallucination.
+ *  2. Enkrypt /guardrails/detect — bias framing + policy violations (price-fixing, ToS).
  */
 export async function safetyAudit(brief: string, diffContext: string): Promise<GuardrailVerdict> {
   if (!apiKey()) return disabledVerdict('safety');
 
-  const [hallucination, detect] = await Promise.all([
-    enkryptPost<HallucinationResponse>('/guardrails/hallucination', {
+  const hallucinationPromise: Promise<HallucinationResponse | null> = enkryptPost<HallucinationResponse>(
+    '/guardrails/hallucination',
+    {
       request_text:
         'Write a weekly competitive intelligence growth brief strictly grounded in the provided structured diff data.',
       response_text: brief.slice(0, 30_000),
       context: diffContext.slice(0, 30_000),
-    }),
+    },
+  ).catch(err => {
+    console.warn('[enkrypt] hallucination endpoint unavailable, using deterministic grounding:', String(err).slice(0, 200));
+    return null;
+  });
+
+  const [hallucination, detect] = await Promise.all([
+    hallucinationPromise,
     enkryptPost<DetectResponse>('/guardrails/detect', {
       text: brief.slice(0, 30_000),
       detectors: {
@@ -123,11 +168,14 @@ export async function safetyAudit(brief: string, diffContext: string): Promise<G
 
   const violations: string[] = [];
 
-  if (hallucination.summary.is_hallucination >= 0.5) {
+  if (hallucination && hallucination.summary.is_hallucination >= 0.5) {
     violations.push(
       `hallucination detected (score ${hallucination.summary.is_hallucination}): brief contains claims not grounded in the diff`,
     );
   }
+  // Deterministic numeric grounding — always runs (primary check while the
+  // Enkrypt endpoint rolls out, defense-in-depth once it's live)
+  violations.push(...verifyNumericGrounding(brief, diffContext));
 
   const s = detect.summary as {
     bias?: number;
@@ -152,7 +200,10 @@ export async function safetyAudit(brief: string, diffContext: string): Promise<G
     enkryptEnabled: true,
     violations,
     detail: {
-      hallucinationScore: hallucination.summary.is_hallucination,
+      groundingMethod: hallucination
+        ? 'enkrypt-hallucination + deterministic-numeric'
+        : 'deterministic-numeric (Enkrypt hallucination endpoint not yet available)',
+      hallucinationScore: hallucination?.summary.is_hallucination ?? null,
       detectSummary: detect.summary,
     },
   };

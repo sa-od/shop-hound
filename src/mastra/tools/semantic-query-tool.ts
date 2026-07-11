@@ -14,9 +14,12 @@ export const semanticQueryTool = createTool({
     'Semantic search over long-term memory in Qdrant. Collection "competitor_products" holds historical product snapshots (filterable by competitor domain); "growth_briefs" holds past weekly briefs for trend analysis.',
   inputSchema: z.object({
     query: z.string().describe('Natural-language search query'),
-    collection: z.enum([COMPETITOR_PRODUCTS, GROWTH_BRIEFS]).default(COMPETITOR_PRODUCTS),
+    collection: z
+      .enum([COMPETITOR_PRODUCTS, GROWTH_BRIEFS])
+      .optional()
+      .describe('Defaults to competitor_products'),
     competitor: z.string().optional().describe('Restrict competitor_products search to one domain'),
-    topK: z.number().min(1).max(20).default(5),
+    topK: z.number().min(1).max(20).optional().describe('Defaults to 5'),
   }),
   outputSchema: z.object({
     results: z.array(
@@ -28,13 +31,14 @@ export const semanticQueryTool = createTool({
   }),
   execute: async (inputData) => {
     await ensureCollections();
+    const collection = inputData.collection ?? COMPETITOR_PRODUCTS;
     const queryVector = await embedText(inputData.query);
     const results = await qdrant.query({
-      indexName: inputData.collection,
+      indexName: collection,
       queryVector,
-      topK: inputData.topK,
+      topK: inputData.topK ?? 5,
       filter:
-        inputData.collection === COMPETITOR_PRODUCTS && inputData.competitor
+        collection === COMPETITOR_PRODUCTS && inputData.competitor
           ? { competitor: inputData.competitor }
           : undefined,
     });

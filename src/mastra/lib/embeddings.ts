@@ -6,7 +6,13 @@ import type { NormalizedProduct } from './types';
 export const EMBEDDING_MODEL_ID = 'openai/text-embedding-3-small';
 export const EMBEDDING_DIMENSION = 1536;
 
-const embeddingModel = new ModelRouterEmbeddingModel(EMBEDDING_MODEL_ID);
+// Lazy: constructing the router validates OPENAI_API_KEY, which must not
+// happen at import time (before env is loaded).
+let _model: ModelRouterEmbeddingModel | null = null;
+function embeddingModel(): ModelRouterEmbeddingModel {
+  _model ??= new ModelRouterEmbeddingModel(EMBEDDING_MODEL_ID);
+  return _model;
+}
 
 /**
  * Stable semantic identity for a product. Price is deliberately excluded so a
@@ -20,13 +26,13 @@ export function productToEmbeddingText(p: NormalizedProduct): string {
 export async function embedProducts(products: NormalizedProduct[]): Promise<number[][]> {
   if (products.length === 0) return [];
   const { embeddings } = await embedMany({
-    model: embeddingModel,
+    model: embeddingModel(),
     values: products.map(productToEmbeddingText),
   });
   return embeddings;
 }
 
 export async function embedText(text: string): Promise<number[]> {
-  const { embedding } = await embed({ model: embeddingModel, value: text });
+  const { embedding } = await embed({ model: embeddingModel(), value: text });
   return embedding;
 }
