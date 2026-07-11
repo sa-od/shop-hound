@@ -60,6 +60,7 @@ export async function scrapeShopifyCatalog(domain: string): Promise<NormalizedPr
           tags: Array.isArray(p.tags) ? p.tags : (p.tags ?? '').split(',').map(t => t.trim()).filter(Boolean),
           price: Math.min(...prices),
           maxPrice: Math.max(...prices),
+          currency: 'USD',
           url: `https://${host}/products/${p.handle}`,
           variantCount: p.variants.length,
           available: p.variants.some(v => v.available !== false),
