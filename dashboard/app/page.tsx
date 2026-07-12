@@ -80,6 +80,17 @@ function BriefCard({ brief }: { brief: BriefSummary }) {
           <VerifiedBadge green={brief.greenLight} />
         </div>
 
+        <div className="mt-3 flex flex-wrap items-center gap-1.5">
+          {brief.competitors.map((c) => (
+            <span
+              key={c.competitor}
+              className="inline-flex items-center rounded-md border border-zinc-800 bg-zinc-950/60 px-2 py-0.5 font-mono text-xs text-zinc-300"
+            >
+              {c.competitor}
+            </span>
+          ))}
+        </div>
+
         <div className="mt-4 flex flex-wrap items-center gap-2">
           <StatChip kind="price" value={totals.priceChanges} />
           <StatChip kind="new" value={totals.newSkus} />
