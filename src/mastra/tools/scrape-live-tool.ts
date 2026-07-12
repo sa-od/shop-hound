@@ -1,6 +1,6 @@
 import { createTool } from '@mastra/core/tools';
 import { z } from 'zod';
-import { scrapeShopifyCatalog, normalizeDomain } from '../lib/scraper';
+import { scrapeCatalog, normalizeDomain } from '../lib/scraper';
 import { normalizedProductSchema } from '../lib/types';
 
 /**
@@ -11,22 +11,23 @@ import { normalizedProductSchema } from '../lib/types';
 export const scrapeLiveTool = createTool({
   id: 'scrape-live',
   description:
-    'Fetch the LIVE public product catalog of a Shopify store (via /products.json). Use this to verify a current price or product before making a claim. Returns normalized products.',
+    'Fetch the LIVE public product catalog of any online store (Shopify /products.json first, Firecrawl AI extraction as fallback for non-Shopify stores). Use this to verify a current price or product before making a claim. Returns normalized products.',
   inputSchema: z.object({
     domain: z.string().describe('Store domain, e.g. "allbirds.com"'),
     query: z.string().optional().describe('Optional case-insensitive title filter'),
   }),
   outputSchema: z.object({
     competitor: z.string(),
+    source: z.enum(['shopify', 'firecrawl']).describe('Which ingestion path produced the data'),
     productCount: z.number(),
     products: z.array(normalizedProductSchema).describe('Up to 25 matching products'),
   }),
   execute: async (inputData) => {
     const competitor = normalizeDomain(inputData.domain);
-    const all = await scrapeShopifyCatalog(competitor);
+    const { products: all, source } = await scrapeCatalog(competitor);
     const filtered = inputData.query
       ? all.filter(p => p.title.toLowerCase().includes(inputData.query!.toLowerCase()))
       : all;
-    return { competitor, productCount: filtered.length, products: filtered.slice(0, 25) };
+    return { competitor, source, productCount: filtered.length, products: filtered.slice(0, 25) };
   },
 });

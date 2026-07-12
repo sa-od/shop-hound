@@ -6,7 +6,7 @@ import {
   guardrailVerdictSchema,
   type CompetitorSnapshot,
 } from '../lib/types';
-import { scrapeShopifyCatalog, normalizeDomain } from '../lib/scraper';
+import { scrapeCatalog, normalizeDomain } from '../lib/scraper';
 import { embedProducts, embedText } from '../lib/embeddings';
 import { qdrant, ensureCollections, upsertBatched, COMPETITOR_PRODUCTS, GROWTH_BRIEFS } from '../lib/qdrant';
 import { saveSnapshot, saveBrief } from '../lib/intel-db';
@@ -60,9 +60,9 @@ const scrapeStep = createStep({
 
     for (const competitor of competitors) {
       try {
-        const products = await scrapeShopifyCatalog(competitor);
-        if (products.length === 0) throw new Error('empty catalog');
-        snapshots.push({ competitor, snapshotDate, products });
+        // Shopify /products.json first, Firecrawl AI extraction as fallback
+        const { products, source } = await scrapeCatalog(competitor);
+        snapshots.push({ competitor, snapshotDate, products, source });
       } catch (err) {
         // Low-confidence fallback (PRD §5.3): never let the agent speculate
         unverified.push(competitor);
@@ -129,7 +129,7 @@ const diffStep = createStep({
       const diff = await diffSnapshots(snapshot, previous);
       // Deterministic grounding pre-check: numbers must map to the payload
       groundingErrors.push(...verifyDiffAgainstPayload(diff, snapshot, previous));
-      diffs.push(diff);
+      diffs.push({ ...diff, source: snapshot.source ?? ('shopify' as const) });
     }
 
     for (const competitor of inputData.unverified) {
@@ -285,6 +285,7 @@ const persistStep = createStep({
           competitors: inputData.diff.diffs.map(c => ({
             competitor: c.competitor,
             status: c.status,
+            source: c.source ?? 'shopify',
             productCount: c.productCount,
             newSkus: c.newSkus.length,
             priceChanges: c.priceChanges.length,

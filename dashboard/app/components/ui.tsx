@@ -50,6 +50,11 @@ export function CompetitorChip({ c }: { c: CompetitorSummary }) {
         <span className="truncate font-mono text-sm text-zinc-200">{c.competitor}</span>
       </div>
       <div className="flex items-center gap-2 shrink-0">
+        {c.source === "firecrawl" && (
+          <span className="rounded-full border border-orange-500/30 bg-orange-500/10 px-2 py-0.5 text-[11px] font-medium text-orange-300">
+            via Firecrawl
+          </span>
+        )}
         {c.status !== "unverified" && (
           <span className="font-mono text-xs text-zinc-500">{c.productCount.toLocaleString()} products</span>
         )}

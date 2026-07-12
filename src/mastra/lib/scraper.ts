@@ -1,9 +1,11 @@
 import { normalizedProductSchema, type NormalizedProduct } from './types';
+import { firecrawlEnabled, extractCatalogWithFirecrawl } from './firecrawl';
 
 /**
- * Hybrid ingestion (PRD §5.1) — structured JSON from the public Shopify
- * /products.json endpoint. Firecrawl (JS-rendered/sentiment) can be layered in
- * later; the public endpoint covers catalog, pricing, and SKU data.
+ * Hybrid ingestion (PRD §5.1) — Shopify-first, Firecrawl-fallback.
+ * The public /products.json endpoint covers catalog, pricing, and SKU data for
+ * Shopify stores (free, fast, complete). When it fails — non-Shopify platform,
+ * endpoint disabled, bot protection — Firecrawl AI extraction takes over.
  */
 
 const PAGE_LIMIT = 250;
@@ -72,4 +74,27 @@ export async function scrapeShopifyCatalog(domain: string): Promise<NormalizedPr
   }
 
   return products;
+}
+
+export type CatalogSource = 'shopify' | 'firecrawl';
+
+/**
+ * Scrape any store's catalog: Shopify /products.json first, Firecrawl AI
+ * extraction as fallback (only when FIRECRAWL_API_KEY is set). Throws only when
+ * every available path fails — the caller marks the competitor unverified.
+ */
+export async function scrapeCatalog(
+  domain: string,
+): Promise<{ products: NormalizedProduct[]; source: CatalogSource }> {
+  const host = normalizeDomain(domain);
+  try {
+    const products = await scrapeShopifyCatalog(host);
+    if (products.length === 0) throw new Error('empty Shopify catalog');
+    return { products, source: 'shopify' };
+  } catch (shopifyErr) {
+    if (!firecrawlEnabled()) throw shopifyErr;
+    console.warn(`[scrape] ${host}: Shopify path failed (${shopifyErr}), falling back to Firecrawl`);
+    const products = await extractCatalogWithFirecrawl(host);
+    return { products, source: 'firecrawl' };
+  }
 }

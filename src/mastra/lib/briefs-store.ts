@@ -19,6 +19,7 @@ function client(): QdrantClient {
 export interface CompetitorSummary {
   competitor: string;
   status: string;
+  source?: 'shopify' | 'firecrawl';
   productCount: number;
   newSkus: number;
   priceChanges: number;

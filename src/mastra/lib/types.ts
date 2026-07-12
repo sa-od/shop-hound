@@ -22,6 +22,7 @@ export const competitorSnapshotSchema = z.object({
   competitor: z.string(), // domain, e.g. "allbirds.com"
   snapshotDate: z.string(), // ISO date (YYYY-MM-DD)
   products: z.array(normalizedProductSchema),
+  source: z.enum(['shopify', 'firecrawl']).optional(), // ingestion path (default shopify)
 });
 export type CompetitorSnapshot = z.infer<typeof competitorSnapshotSchema>;
 
@@ -54,6 +55,7 @@ export const skuSummarySchema = z.object({
 export const competitorDiffSchema = z.object({
   competitor: z.string(),
   status: z.enum(['verified', 'unverified', 'first_snapshot']),
+  source: z.enum(['shopify', 'firecrawl']).optional(), // ingestion path (default shopify)
   previousSnapshotDate: z.string().nullable(),
   currentSnapshotDate: z.string(),
   productCount: z.number(),

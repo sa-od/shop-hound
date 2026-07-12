@@ -84,7 +84,7 @@ export function RunAnalysis({ lastCreatedAt }: { lastCreatedAt: string | null })
           </button>
         )}
       </div>
-      <label className="text-xs text-zinc-500">Competitor Shopify domains (comma-separated)</label>
+      <label className="text-xs text-zinc-500">Competitor store domains (comma-separated)</label>
       <div className="mt-1.5 flex flex-col gap-2 sm:flex-row">
         <input
           value={domains}
@@ -104,7 +104,8 @@ export function RunAnalysis({ lastCreatedAt }: { lastCreatedAt: string | null })
       </div>
       {note && <p className="mt-2 text-xs text-zinc-400">{note}</p>}
       <p className="mt-2 text-[11px] text-zinc-600">
-        Non-Shopify stores (e.g. Ray-Ban, Oakley) return &quot;Unverified&quot; — only /products.json stores scrape.
+        Shopify stores scrape instantly via /products.json. Non-Shopify stores fall back to Firecrawl AI
+        extraction — slower (a few minutes) and best-effort on large catalogs.
       </p>
     </div>
   );

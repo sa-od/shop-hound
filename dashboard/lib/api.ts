@@ -4,6 +4,7 @@ const API = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4111';
 export interface CompetitorSummary {
   competitor: string;
   status: 'verified' | 'unverified' | 'first_snapshot' | string;
+  source?: 'shopify' | 'firecrawl';
   productCount: number;
   newSkus: number;
   priceChanges: number;
