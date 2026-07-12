@@ -85,13 +85,18 @@ async function scrollAll(): Promise<BriefDetail[]> {
     offset = res.next_page_offset as typeof offset;
   } while (offset !== null && offset !== undefined);
 
-  // dedupe by weekOf → keep the most recent createdAt
-  const byWeek = new Map<string, BriefDetail>();
+  // dedupe by (weekOf + competitor set) → keep the most recent createdAt.
+  // A re-run of the same competitors in a week replaces its card; a different
+  // set is its own card. Derive the key from competitors so points written
+  // before `competitorKey` existed still dedupe correctly.
+  const byKey = new Map<string, BriefDetail>();
   for (const b of briefs) {
-    const existing = byWeek.get(b.weekOf);
-    if (!existing || b.createdAt > existing.createdAt) byWeek.set(b.weekOf, b);
+    const competitorKey = b.competitors.map(c => c.competitor).sort().join(',');
+    const key = `${b.weekOf}|${competitorKey}`;
+    const existing = byKey.get(key);
+    if (!existing || b.createdAt > existing.createdAt) byKey.set(key, b);
   }
-  return [...byWeek.values()].sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
+  return [...byKey.values()].sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
 }
 
 export async function listBriefs(): Promise<BriefSummary[]> {
@@ -100,10 +105,17 @@ export async function listBriefs(): Promise<BriefSummary[]> {
   return all.map(({ briefMarkdown, ...summary }) => summary);
 }
 
-/** Look up a single brief by weekOf (e.g. "2026-07-11") or numeric briefId. */
-export async function getBrief(idOrWeek: string): Promise<BriefDetail | null> {
+/**
+ * Look up a single brief. The canonical key is `createdAt` (unique per run;
+ * briefId can collide because intel.db resets on cloud restarts). Falls back to
+ * weekOf / briefId for older links — note those may be ambiguous now that a week
+ * can hold several briefs, so the newest match (scrollAll is sorted desc) wins.
+ */
+export async function getBrief(id: string): Promise<BriefDetail | null> {
   const all = await scrollAll();
   return (
-    all.find(b => b.weekOf === idOrWeek || String(b.briefId) === idOrWeek) ?? null
+    all.find(b => b.createdAt === id) ??
+    all.find(b => b.weekOf === id || String(b.briefId) === id) ??
+    null
   );
 }

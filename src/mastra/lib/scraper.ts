@@ -7,7 +7,7 @@ import { normalizedProductSchema, type NormalizedProduct } from './types';
  */
 
 const PAGE_LIMIT = 250;
-const MAX_PAGES = 4; // hackathon cap: up to 1000 products per competitor
+const MAX_PAGES = 10; // cap: up to 2500 products per competitor (~2–3 min embed)
 
 interface ShopifyProductsResponse {
   products: Array<{

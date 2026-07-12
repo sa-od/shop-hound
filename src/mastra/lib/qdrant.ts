@@ -61,6 +61,7 @@ export async function ensureCollections(): Promise<void> {
     [COMPETITOR_PRODUCTS, 'competitor', 'keyword'],
     [COMPETITOR_PRODUCTS, 'snapshotDate', 'keyword'],
     [GROWTH_BRIEFS, 'weekOf', 'keyword'],
+    [GROWTH_BRIEFS, 'competitorKey', 'keyword'],
     [SNAPSHOT_RECORDS, 'competitor', 'keyword'],
     [SNAPSHOT_RECORDS, 'snapshotDate', 'keyword'],
   ];

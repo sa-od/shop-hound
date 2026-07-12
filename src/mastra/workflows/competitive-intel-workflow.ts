@@ -257,9 +257,18 @@ const persistStep = createStep({
     // Archive EVERY brief (green or not) into long-term memory — Qdrant is the
     // durable read source for the dashboard (intel.db is ephemeral in the cloud).
     await ensureCollections();
-    // Dedupe re-runs for the same week before writing the fresh point.
+    // A brief is identified by (week, competitor set). Re-running the SAME
+    // competitors in a week replaces that card; a different set makes a new one.
+    const competitorKey = inputData.diff.diffs
+      .map(c => c.competitor)
+      .sort()
+      .join(',');
+    // Dedupe re-runs of this same competitor set for the week before writing.
     await qdrant
-      .deleteVectors({ indexName: GROWTH_BRIEFS, filter: { weekOf: inputData.diff.weekOf } })
+      .deleteVectors({
+        indexName: GROWTH_BRIEFS,
+        filter: { weekOf: inputData.diff.weekOf, competitorKey },
+      })
       .catch(() => {});
     const vector = await embedText(inputData.brief.slice(0, 8000));
     await qdrant.upsert({
@@ -269,6 +278,7 @@ const persistStep = createStep({
         {
           briefId,
           weekOf: inputData.diff.weekOf,
+          competitorKey,
           createdAt: new Date().toISOString(),
           greenLight: inputData.greenLight,
           briefMarkdown: inputData.brief, // full text — Qdrant is the durable archive
