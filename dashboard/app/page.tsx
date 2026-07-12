@@ -61,7 +61,7 @@ function BriefCard({ brief }: { brief: BriefSummary }) {
   return (
     <li>
       <Link
-        href={`/briefs/${encodeURIComponent(brief.createdAt)}`}
+        href={`/briefs/${Date.parse(brief.createdAt)}`}
         className="group block rounded-xl border border-zinc-800 bg-zinc-900/50 p-5 transition hover:border-zinc-700 hover:bg-zinc-900"
       >
         <div className="flex items-start justify-between gap-4">

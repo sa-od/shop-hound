@@ -106,14 +106,16 @@ export async function listBriefs(): Promise<BriefSummary[]> {
 }
 
 /**
- * Look up a single brief. The canonical key is `createdAt` (unique per run;
- * briefId can collide because intel.db resets on cloud restarts). Falls back to
- * weekOf / briefId for older links — note those may be ambiguous now that a week
- * can hold several briefs, so the newest match (scrollAll is sorted desc) wins.
+ * Look up a single brief. The canonical key is the createdAt epoch (unique per
+ * run, and URL-safe — raw ISO timestamps with ':' and '.' break Next/Vercel
+ * dynamic-route matching). Falls back to the raw createdAt / weekOf / briefId
+ * for older links — those may be ambiguous now that a week can hold several
+ * briefs, so the newest match (scrollAll is sorted desc) wins.
  */
 export async function getBrief(id: string): Promise<BriefDetail | null> {
   const all = await scrollAll();
   return (
+    all.find(b => String(Date.parse(b.createdAt)) === id) ??
     all.find(b => b.createdAt === id) ??
     all.find(b => b.weekOf === id || String(b.briefId) === id) ??
     null
