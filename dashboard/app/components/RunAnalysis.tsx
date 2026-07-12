@@ -27,7 +27,18 @@ export function RunAnalysis({ lastCreatedAt }: { lastCreatedAt: string | null })
     if (competitors.length === 0) return;
 
     setPhase("running");
-    setNote("Scraping catalogs & embedding… this takes ~2 minutes.");
+    setNote("Scraping catalogs & embedding… this takes ~2 minutes (longer for non-Shopify stores).");
+
+    // Capture the CURRENT newest brief as the baseline at run time — the
+    // server-rendered prop can be stale (e.g. back-to-back runs), which made
+    // completed runs appear to vanish until a manual refresh.
+    let baseline = lastCreatedAt;
+    try {
+      const res = await fetch(`${API}/status`, { cache: "no-store" });
+      if (res.ok) baseline = (await res.json())?.lastBrief?.createdAt ?? baseline;
+    } catch {
+      /* fall back to the prop */
+    }
 
     // Fire the workflow. It runs long (~2 min) and the HTTP call will likely
     // time out at the gateway — that's fine, the run continues server-side, so
@@ -46,13 +57,13 @@ export function RunAnalysis({ lastCreatedAt }: { lastCreatedAt: string | null })
         const res = await fetch(`${API}/status`, { cache: "no-store" });
         const s = await res.json();
         const newest: string | null = s?.lastBrief?.createdAt ?? null;
-        if (newest && newest !== lastCreatedAt) {
+        if (newest && newest !== baseline) {
           stopPolling();
           setPhase("idle");
           setOpen(false);
           setNote(null);
           router.refresh(); // pull the new brief into the list
-        } else if (Date.now() - started > 6 * 60 * 1000) {
+        } else if (Date.now() - started > 10 * 60 * 1000) {
           stopPolling();
           setPhase("idle");
           setNote("Still running — refresh in a moment to see the result.");

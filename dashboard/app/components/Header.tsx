@@ -1,6 +1,7 @@
 import Link from "next/link";
-import { Radar, Loader2, CheckCircle2 } from "lucide-react";
+import { Radar } from "lucide-react";
 import type { Status } from "@/lib/api";
+import { LiveStatusPill } from "./LiveStatusPill";
 
 export function Header({ status }: { status: Status }) {
   return (
@@ -15,27 +16,8 @@ export function Header({ status }: { status: Status }) {
             <span className="ml-2 hidden text-xs font-normal text-zinc-500 sm:inline">Competitive Intelligence</span>
           </span>
         </Link>
-        <StatusPill status={status} />
+        <LiveStatusPill initial={status} />
       </div>
     </header>
   );
-}
-
-function StatusPill({ status }: { status: Status }) {
-  if (status.running) {
-    return (
-      <span className="inline-flex items-center gap-1.5 rounded-full border border-sky-500/30 bg-sky-500/10 px-3 py-1 text-xs text-sky-300">
-        <Loader2 size={13} className="animate-spin" /> Run in progress
-      </span>
-    );
-  }
-  if (status.lastBrief) {
-    return (
-      <span className="inline-flex items-center gap-1.5 rounded-full border border-zinc-700 bg-zinc-900 px-3 py-1 text-xs text-zinc-300">
-        <CheckCircle2 size={13} className="text-emerald-400" />
-        Last run {status.lastBrief.weekOf}
-      </span>
-    );
-  }
-  return null;
 }
