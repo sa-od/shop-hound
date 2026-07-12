@@ -13,6 +13,7 @@ import { saveSnapshot, saveBrief } from '../lib/intel-db';
 import { saveSnapshotRecord, getPreviousSnapshotRecord } from '../lib/snapshot-store';
 import { diffSnapshots, verifyDiffAgainstPayload } from '../lib/diff-engine';
 import { groundingCheck, safetyAudit } from '../lib/enkrypt';
+import { listBriefs } from '../lib/briefs-store';
 
 /**
  * Competitive Intelligence Workflow (PRD §7) — the linear high-integrity pipeline:
@@ -164,8 +165,13 @@ const groundingStep = createStep({
     grounding: guardrailVerdictSchema,
   }),
   execute: async ({ inputData }) => {
+    // Scan BOTH what the agent will see (the diff JSON) and the raw scraped
+    // product titles — injection can hide in any untrusted string, including
+    // ones that only reach the agent later via tools. (Enkrypt caps at 30k
+    // chars; the diff comes first so agent-bound content is always covered.)
     const diffText = JSON.stringify(inputData.diff);
-    const verdict = await groundingCheck(diffText);
+    const scrapedTitles = inputData.snapshots.flatMap(s => s.products.map(p => p.title)).join('\n');
+    const verdict = await groundingCheck(`${diffText}\n${scrapedTitles}`);
 
     // Merge the deterministic payload-mapping check into the verdict
     if (inputData.groundingErrors.length > 0) {
@@ -173,9 +179,11 @@ const groundingStep = createStep({
       verdict.violations.push(...inputData.groundingErrors);
     }
 
+    // On failure we QUARANTINE rather than throw: the run continues, but the
+    // agent is never invoked (see generate-brief) and the withheld brief is
+    // archived with the full violation record — auditable, visible, blocked.
     if (!verdict.greenLight && verdict.enkryptEnabled) {
-      // Hard stop: unverified data must never reach the reasoning agent (PRD §5.3)
-      throw new Error(`Grounding guardrail BLOCKED the diff: ${verdict.violations.join('; ')}`);
+      console.warn(`[grounding] BLOCKED — agent will not run: ${verdict.violations.join('; ')}`);
     }
     return { diff: inputData.diff, grounding: verdict };
   },
@@ -190,11 +198,59 @@ const generateBriefStep = createStep({
     diff: structuredDiffSchema,
     grounding: guardrailVerdictSchema,
     brief: z.string(),
+    // Serialized verified history handed to the agent — threaded onward so the
+    // safety audit grounds trend claims against it too.
+    history: z.string(),
   }),
   execute: async ({ inputData, mastra }) => {
+    // Hard guarantee (PRD §5.3): data that failed the grounding guardrail
+    // NEVER reaches the reasoning agent. The brief is withheld and the block
+    // itself becomes the (fully audited) deliverable.
+    if (!inputData.grounding.greenLight) {
+      const brief = [
+        '# ⛔ Growth Brief Withheld — Guardrail Block',
+        '',
+        "This week's scraped competitor data **failed the Enkrypt AI grounding guardrail** and was",
+        'quarantined before it could reach the reasoning agent. No AI generation occurred.',
+        '',
+        '**Violations detected:**',
+        ...inputData.grounding.violations.map(v => `- ${v}`),
+        '',
+        '_This is the 0%-hallucination guarantee working: untrusted or malicious input is blocked,_',
+        '_never summarized._',
+      ].join('\n');
+      return { ...inputData, brief, history: '[]' };
+    }
+
+    // Week-over-week trend context from the Qdrant growth_briefs archive:
+    // prior briefs that cover any of this run's competitors, newest first.
+    // Verified payload data only — the agent may cite it, and the safety audit
+    // grounds against it. Failure here must never block the brief.
+    const runCompetitors = new Set(inputData.diff.diffs.map(d => d.competitor));
+    let historyEntries: unknown[] = [];
+    try {
+      const past = await listBriefs();
+      historyEntries = past
+        .filter(b => b.competitors.some(c => runCompetitors.has(c.competitor)))
+        .slice(0, 4)
+        .map(b => ({
+          weekOf: b.weekOf,
+          createdAt: b.createdAt,
+          greenLight: b.greenLight,
+          competitors: b.competitors.filter(c => runCompetitors.has(c.competitor)),
+        }));
+    } catch (err) {
+      console.warn('[generate-brief] history lookup failed, continuing without trends:', err);
+    }
+    const history = JSON.stringify(historyEntries);
+
     const agent = mastra.getAgent('growthBriefAgent');
+    const trendBlock =
+      historyEntries.length > 0
+        ? `\n\nVERIFIED HISTORY (previous archived briefs for these competitors, from long-term Qdrant memory):\n\`\`\`json\n${history}\n\`\`\`\nInclude a "## Week-over-Week Trends" section comparing this week against the history above. Cite ONLY numbers present in the diff or the history.`
+        : '';
     const response = await agent.generate(
-      `Here is this week's VERIFIED structured competitor diff. Write the weekly Growth Brief.\n\n\`\`\`json\n${JSON.stringify(inputData.diff, null, 2)}\n\`\`\``,
+      `Here is this week's VERIFIED structured competitor diff. Write the weekly Growth Brief.\n\n\`\`\`json\n${JSON.stringify(inputData.diff, null, 2)}\n\`\`\`${trendBlock}`,
       {
         memory: {
           resource: 'merchant-default',
@@ -202,7 +258,7 @@ const generateBriefStep = createStep({
         },
       },
     );
-    return { ...inputData, brief: response.text };
+    return { ...inputData, brief: response.text, history };
   },
 });
 
@@ -219,7 +275,24 @@ const safetyAuditStep = createStep({
     greenLight: z.boolean(),
   }),
   execute: async ({ inputData }) => {
-    const safety = await safetyAudit(inputData.brief, JSON.stringify(inputData.diff));
+    // Quarantined upstream → nothing was generated, so there is nothing to
+    // audit. Record the skip explicitly (the audit trail must never be blank).
+    if (!inputData.grounding.greenLight) {
+      const safety = {
+        checkpoint: 'safety' as const,
+        greenLight: false,
+        enkryptEnabled: true,
+        violations: ['audit skipped — grounding guardrail blocked the input upstream, agent never ran'],
+        detail: { skipped: true },
+      };
+      return { ...inputData, safety, greenLight: false };
+    }
+
+    // Grounding context = diff + the verified history the agent was shown, so
+    // trend numbers audit as grounded. Spread keeps `diffs` at the top level —
+    // the deterministic numeric check derives its section counts from it.
+    const auditContext = JSON.stringify({ ...inputData.diff, history: JSON.parse(inputData.history) });
+    const safety = await safetyAudit(inputData.brief, auditContext);
     const greenLight = inputData.grounding.greenLight && safety.greenLight;
 
     if (!safety.greenLight && safety.enkryptEnabled) {

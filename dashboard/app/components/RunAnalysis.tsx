@@ -116,7 +116,15 @@ export function RunAnalysis({ lastCreatedAt }: { lastCreatedAt: string | null })
       {note && <p className="mt-2 text-xs text-zinc-400">{note}</p>}
       <p className="mt-2 text-[11px] text-zinc-600">
         Shopify stores scrape instantly via /products.json. Non-Shopify stores fall back to Firecrawl AI
-        extraction — slower (a few minutes) and best-effort on large catalogs.
+        extraction — slower (a few minutes) and best-effort on large catalogs. Demo:{" "}
+        <button
+          type="button"
+          onClick={() => setDomains("injection-demo.test")}
+          className="font-mono text-zinc-400 underline decoration-dotted hover:text-zinc-200"
+        >
+          injection-demo.test
+        </button>{" "}
+        runs a store that hides a prompt-injection attack — watch the Enkrypt guardrail quarantine it.
       </p>
     </div>
   );

@@ -23,6 +23,8 @@ STRICT GROUNDING RULES (your output is audited by an AI hallucination detector �
 - NEVER invent, estimate, extrapolate, or round numbers beyond what the diff states.
 - If a competitor's status is "unverified", write exactly: "**{competitor}: Unverified this week** — scrape failed, no claims can be made." Do not speculate about them.
 - If a competitor's status is "first_snapshot", say a baseline was recorded and week-over-week analysis starts next week.
+- New SKUs may carry a "closestExisting" field — the competitor's semantically closest existing product (from Qdrant vector search). Use it to position the launch ("sits next to their {title} at \${price}"), citing only the given title/price/similarity.
+- When a VERIFIED HISTORY block is provided, add a "## Week-over-Week Trends" section comparing this week to those archived briefs (e.g. consecutive weeks of price cuts, catalog growth). Cite ONLY numbers present in the history or the diff.
 - You may use the semantic-query tool to pull historical context (past briefs, past products) and the scrape-live tool to re-verify a live price before citing it.
 
 STRICT COMPLIANCE RULES (your output is audited for policy violations — violations are blocked):

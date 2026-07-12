@@ -15,6 +15,8 @@ import type { CompetitorDiff, CompetitorSnapshot, NormalizedProduct } from './ty
 // Tuned for Qwen3-Embedding space: renamed-same-product ≈ 0.98, similar-but-
 // different products ≈ 0.89. 0.93 gives margin on both sides.
 const SEMANTIC_MATCH_THRESHOLD = 0.93;
+// Concurrent Qdrant rescue queries (fan-out cap)
+const RESCUE_CONCURRENCY = 8;
 
 export async function diffSnapshots(
   current: CompetitorSnapshot,
@@ -50,19 +52,36 @@ export async function diffSnapshots(
     recordChanges(cur, prev, priceChanges, titleChanges);
   }
 
-  // Pass 2 — semantic matching via Qdrant for products whose ID changed
-  const stillUnmatched: NormalizedProduct[] = [];
+  // Pass 2 — semantic matching via Qdrant for products whose ID changed.
+  // The vector searches fan out concurrently (a store with hundreds of
+  // unmatched SKUs would otherwise serialize hundreds of round-trips); the
+  // match-assignment pass below stays sequential so the matched-ID dedup is
+  // deterministic regardless of query completion order.
+  const stillUnmatched: Array<{ product: NormalizedProduct; nearest?: { title: string; price: number; similarity: number } }> = [];
   if (unmatchedCurrent.length > 0) {
     const vectors = await embedProducts(unmatchedCurrent);
+    const hits: Array<{ score: number; metadata?: Record<string, unknown> } | undefined> = new Array(
+      unmatchedCurrent.length,
+    );
+    let nextIndex = 0;
+    const workers = Array.from({ length: Math.min(RESCUE_CONCURRENCY, unmatchedCurrent.length) }, async () => {
+      for (;;) {
+        const i = nextIndex++;
+        if (i >= unmatchedCurrent.length) return;
+        const results = await qdrant.query({
+          indexName: COMPETITOR_PRODUCTS,
+          queryVector: vectors[i],
+          topK: 1,
+          filter: { competitor: current.competitor, snapshotDate: previous.snapshotDate },
+        });
+        hits[i] = results[0];
+      }
+    });
+    await Promise.all(workers);
+
     for (let i = 0; i < unmatchedCurrent.length; i++) {
       const cur = unmatchedCurrent[i];
-      const results = await qdrant.query({
-        indexName: COMPETITOR_PRODUCTS,
-        queryVector: vectors[i],
-        topK: 1,
-        filter: { competitor: current.competitor, snapshotDate: previous.snapshotDate },
-      });
-      const hit = results[0];
+      const hit = hits[i];
       const prev =
         hit && hit.score >= SEMANTIC_MATCH_THRESHOLD
           ? previous.products.find(
@@ -72,14 +91,23 @@ export async function diffSnapshots(
 
       if (prev) {
         matchedPrevIds.add(prev.productId);
-        recordChanges(cur, prev, priceChanges, titleChanges, hit.score);
+        recordChanges(cur, prev, priceChanges, titleChanges, hit!.score);
       } else {
-        stillUnmatched.push(cur);
+        // The sub-threshold hit is still signal: it is the competitor's
+        // semantically closest EXISTING product to this genuinely-new SKU.
+        const nearest =
+          hit && typeof hit.metadata?.title === 'string' && typeof hit.metadata?.price === 'number'
+            ? { title: hit.metadata.title, price: hit.metadata.price, similarity: Math.round(hit.score * 100) / 100 }
+            : undefined;
+        stillUnmatched.push({ product: cur, nearest });
       }
     }
   }
 
-  const newSkus = stillUnmatched.map(toSummary);
+  const newSkus = stillUnmatched.map(({ product, nearest }) => ({
+    ...toSummary(product),
+    ...(nearest ? { closestExisting: nearest } : {}),
+  }));
   const removedSkus = previous.products.filter(p => !matchedPrevIds.has(p.productId)).map(toSummary);
 
   return { ...base, newSkus, removedSkus, priceChanges, titleChanges };

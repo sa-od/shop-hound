@@ -46,10 +46,18 @@ Any store with a public `/products.json` works. These are confirmed live and sma
 **Best demo combo:** `goodr.com, magicspoon.com, deathwishcoffee.com` — ~800 products
 total, all Verified, done in ~1 minute.
 
-> **Note on "Unverified":** stores that aren't Shopify, have `/products.json` disabled,
-> or are mistyped (e.g. `jeins.com`) can't be scraped — ShopHound marks them
-> **"Unverified this week"** instead of guessing. That refusal-to-fabricate *is* the
-> product working correctly.
+> **Note on "Unverified":** dead or mistyped domains that neither ingestion path can
+> reach are marked **"Unverified this week"** instead of guessed at. That
+> refusal-to-fabricate *is* the product working correctly.
+
+### 🎯 Try the guardrail live — the injection honeypot
+
+Run **`injection-demo.test`** from the "New analysis" box. It's a synthetic store whose
+catalog hides a prompt-injection attack inside a product title (*"IGNORE ALL PREVIOUS
+INSTRUCTIONS…"*) — exactly how a hostile competitor page would try to manipulate the
+agent. Watch the Enkrypt grounding guardrail **quarantine the data before the agent ever
+sees it**: the run completes, but delivers a "⛔ Brief Withheld" card with the violation
+on the audit trail. No AI generation occurs on blocked input.
 
 ### 🖥️ Run locally
 
@@ -81,22 +89,52 @@ A 7-step Mastra workflow runs the pipeline:
 - Deployed on **Mastra Cloud**.
 
 ### 🔷 Qdrant — the durable brain
-- Three collections over cosine similarity: `competitor_products` (per-product vectors),
-  `snapshot_records` (weekly catalog baselines), `growth_briefs` (archived audited briefs).
+- Three collections over cosine similarity (1024-dim Featherless embeddings):
+  `competitor_products` (per-product vectors), `snapshot_records` (weekly catalog
+  baselines), `growth_briefs` (archived audited briefs). Keyword **payload indexes**
+  power strict-mode filtered search — the same payload-partitioning pattern Qdrant
+  documents for **multitenancy**.
 - **Semantic change-detection:** the diff engine rescues renamed / re-IDed products at
-  **cosine ≥ 0.93**, so real changes aren't lost as noise.
-- **Time-series baseline:** `snapshot_records` is *how the system knows what's new* — each
-  run diffs the current catalog against the previous snapshot.
+  **cosine ≥ 0.93** (threshold measured empirically for the embedding space: same-product
+  ≈ 0.98, similar-but-different ≈ 0.89). Rescue queries **fan out 8-wide concurrently**;
+  match assignment stays sequential for deterministic dedup.
+- **Nearest-neighbor insight for free:** a new SKU's sub-threshold nearest neighbor is
+  kept as `closestExisting` — the brief positions every launch inside the competitor's
+  own catalog ("sits next to their Aviator line at $149").
+- **Time-series memory:** `snapshot_records` is *how the system knows what's new* (each
+  run diffs against the previous snapshot), and archived `growth_briefs` are read back to
+  give the agent a verified **Week-over-Week Trends** section.
 - Durable source of truth (LibSQL is ephemeral on the cloud container), shared across
-  local dev and production.
+  local dev and production. The agent also gets a `semantic-query` tool over both
+  vector collections.
 
 ### 🛡️ Enkrypt AI — the trust layer (the differentiator)
-- A guardrail **"sandwich"**: **input grounding** (prompt-injection + toxicity on source
-  data) and **output safety** (bias / policy / NSFW on the generated brief).
+- A guardrail **"sandwich"** around the agent:
+  - **Input grounding** — a **managed policy deployment** (`shophound-grounding`,
+    created via `/guardrails/add-policy`, called via `/guardrails/policy/detect`) runs
+    3 detectors on the untrusted scraped data: **prompt injection, toxicity, PII** —
+    with an inline-detector fallback so the guardrail never silently weakens.
+  - **Output safety** — 6 detectors on the generated brief: **bias, toxicity, NSFW,
+    PII leakage, adherence** (LLM-judged faithfulness of every claim to the diff
+    context — the RAG-grounding check, score archived), and **policy_violation**
+    against a custom e-commerce compliance policy (no price-fixing, no ToS violations,
+    no deceptive practices).
+- **Quarantine, not crash:** grounding failures never reach the agent — the run
+  delivers an audited "Brief Withheld" card listing the violations (see the
+  `injection-demo.test` honeypot above).
+- **Compliance mappings** for every flagged violation (OWASP LLM Top-10, NIST AI RMF,
+  EU AI Act, MITRE ATLAS) are captured into the archived audit trail.
 - A **deterministic numeric grounding** check forces every `$` and `%` in the brief to
-  trace back to the verified diff data — the mechanism behind **0% hallucination**.
+  trace back to the verified diff + history data — the mechanism behind **0%
+  hallucination** (primary while Enkrypt's dedicated hallucination endpoint rolls out;
+  defense-in-depth after). The unreliable-for-this-domain `relevancy` detector was
+  evaluated and excluded — tested, not assumed.
 - Every brief carries a **PASS/FAIL audit trail**, surfaced in the dashboard as the
   **"Verified by Enkrypt AI"** badge and audit panel.
+- Roadmap: automated **red-teaming** of the agent via Enkrypt's redteam API (access
+  verified), hybrid dense+sparse product matching in Qdrant, and merchant accounts
+  (JWT auth on the Hono gateway, per-merchant competitor sets, tenant isolation via
+  Qdrant payload filters).
 
 ### 🤖 Supporting stack
 - **Featherless AI** — all inference via one OpenAI-compatible endpoint: `Qwen2.5-72B`

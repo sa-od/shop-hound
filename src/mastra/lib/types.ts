@@ -50,6 +50,12 @@ export const skuSummarySchema = z.object({
   title: z.string(),
   price: z.number(),
   url: z.string(),
+  // For NEW SKUs: the competitor's semantically closest existing product
+  // (Qdrant nearest-neighbor below the same-product threshold) — positions the
+  // launch inside their own catalog ("sits next to their Aviator line").
+  closestExisting: z
+    .object({ title: z.string(), price: z.number(), similarity: z.number() })
+    .optional(),
 });
 
 export const competitorDiffSchema = z.object({

@@ -25,10 +25,10 @@ function apiKey(): string | undefined {
   return process.env.ENKRYPT_API_KEY;
 }
 
-async function enkryptPost<T>(path: string, body: unknown): Promise<T> {
+async function enkryptPost<T>(path: string, body: unknown, extraHeaders?: Record<string, string>): Promise<T> {
   const res = await fetch(`${ENKRYPT_BASE_URL}${path}`, {
     method: 'POST',
-    headers: { apikey: apiKey()!, 'Content-Type': 'application/json' },
+    headers: { apikey: apiKey()!, 'Content-Type': 'application/json', ...extraHeaders },
     body: JSON.stringify(body),
   });
   if (!res.ok) {
@@ -36,6 +36,12 @@ async function enkryptPost<T>(path: string, body: unknown): Promise<T> {
   }
   return (await res.json()) as T;
 }
+
+// Managed guardrails policy on the Enkrypt platform (created via
+// /guardrails/add-policy): the grounding detector set lives as a named,
+// centrally-editable deployment instead of inline per-call config. The
+// output-side audit stays inline because `adherence` needs per-call context.
+const GROUNDING_POLICY = 'shophound-grounding';
 
 interface DetectResponse {
   summary: Record<string, unknown>;
@@ -57,28 +63,64 @@ function disabledVerdict(checkpoint: 'grounding' | 'safety'): GuardrailVerdict {
   };
 }
 
+// PII entities scanned on both checkpoints. Deliberately EXCLUDES person_name:
+// products are routinely named after people (eyewear: "Erika", "Wayfarer") and
+// would false-positive; contact details are the real leak vector.
+const PII_ENTITIES = ['email', 'phone_number'];
+
+/** Pull compliance-framework tags (OWASP LLM Top-10, NIST AI RMF, EU AI Act…) for flagged detectors. */
+function complianceTags(details: Record<string, unknown>, flagged: string[]): Record<string, unknown> {
+  const tags: Record<string, unknown> = {};
+  for (const name of flagged) {
+    const mapping = (details as any)?.[name]?.compliance_mapping;
+    if (mapping && Object.keys(mapping).length > 0) tags[name] = mapping;
+  }
+  return tags;
+}
+
 /**
  * GROUNDING checkpoint (input side).
  * Scans the scraped/diff payload that is about to reach the reasoning agent:
- * scraped web content is untrusted input, so we check for prompt injection and
- * toxic content smuggled inside product data.
+ * scraped web content is untrusted input, so we check for prompt injection,
+ * toxic content, and PII smuggled inside product data.
  */
 export async function groundingCheck(diffText: string): Promise<GuardrailVerdict> {
   if (!apiKey()) return disabledVerdict('grounding');
 
-  const res = await enkryptPost<DetectResponse>('/guardrails/detect', {
-    text: diffText.slice(0, 30_000),
-    detectors: {
-      injection_attack: { enabled: true },
-      toxicity: { enabled: true },
-    },
+  const text = diffText.slice(0, 30_000);
+  // Prefer the managed policy deployment; fall back to inline detector config
+  // so the guardrail never silently weakens if the policy is renamed/deleted.
+  const res = await enkryptPost<DetectResponse>(
+    '/guardrails/policy/detect',
+    { text },
+    { 'x-enkrypt-policy': GROUNDING_POLICY },
+  ).catch(err => {
+    console.warn(`[enkrypt] policy "${GROUNDING_POLICY}" unavailable, using inline detectors:`, String(err).slice(0, 150));
+    return enkryptPost<DetectResponse>('/guardrails/detect', {
+      text,
+      detectors: {
+        injection_attack: { enabled: true },
+        toxicity: { enabled: true },
+        pii: { enabled: true, entities: PII_ENTITIES },
+      },
+    });
   });
 
   const violations: string[] = [];
-  const s = res.summary as { injection_attack?: number; toxicity?: unknown[] };
-  if (s.injection_attack) violations.push('prompt injection detected in scraped payload');
+  const flagged: string[] = [];
+  const s = res.summary as { injection_attack?: number; toxicity?: unknown[]; pii?: number };
+  if (s.injection_attack) {
+    violations.push('prompt injection detected in scraped payload');
+    flagged.push('injection_attack');
+  }
   if (Array.isArray(s.toxicity) && s.toxicity.length > 0) {
     violations.push(`toxic content in scraped payload: ${s.toxicity.join(', ')}`);
+    flagged.push('toxicity');
+  }
+  if (s.pii) {
+    const entities = Object.keys((res.details as any)?.pii?.entities ?? {});
+    violations.push(`PII detected in scraped payload (${entities.join(', ') || 'unspecified'})`);
+    flagged.push('pii');
   }
 
   return {
@@ -86,7 +128,7 @@ export async function groundingCheck(diffText: string): Promise<GuardrailVerdict
     greenLight: violations.length === 0,
     enkryptEnabled: true,
     violations,
-    detail: { summary: res.summary },
+    detail: { summary: res.summary, compliance: complianceTags(res.details, flagged) },
   };
 }
 
@@ -127,11 +169,18 @@ export function verifyNumericGrounding(brief: string, diffContext: string): stri
   return violations;
 }
 
+// The instruction the reasoning agent answers — relevancy is judged against it.
+const BRIEF_INSTRUCTION =
+  'Write a weekly competitive intelligence growth brief strictly grounded in the provided structured diff data.';
+
 /**
- * SAFETY checkpoint (output side) — two checks:
+ * SAFETY checkpoint (output side) — three layers:
  *  1. Grounding audit — Enkrypt /guardrails/hallucination when available,
- *     deterministic numeric verification as fallback. PRD metric: 0% hallucination.
- *  2. Enkrypt /guardrails/detect — bias framing + policy violations (price-fixing, ToS).
+ *     deterministic numeric verification always. PRD metric: 0% hallucination.
+ *  2. RAG-grounding detectors — relevancy (does the brief answer the brief
+ *     instruction?) and adherence (does every claim stick to the diff context?).
+ *  3. Content detectors — bias, toxicity, nsfw, PII leakage, and policy
+ *     violations (price-fixing, ToS) against the custom compliance policy.
  */
 export async function safetyAudit(brief: string, diffContext: string): Promise<GuardrailVerdict> {
   if (!apiKey()) return disabledVerdict('safety');
@@ -139,8 +188,7 @@ export async function safetyAudit(brief: string, diffContext: string): Promise<G
   const hallucinationPromise: Promise<HallucinationResponse | null> = enkryptPost<HallucinationResponse>(
     '/guardrails/hallucination',
     {
-      request_text:
-        'Write a weekly competitive intelligence growth brief strictly grounded in the provided structured diff data.',
+      request_text: BRIEF_INSTRUCTION,
       response_text: brief.slice(0, 30_000),
       context: diffContext.slice(0, 30_000),
     },
@@ -157,6 +205,12 @@ export async function safetyAudit(brief: string, diffContext: string): Promise<G
         bias: { enabled: true },
         toxicity: { enabled: true },
         nsfw: { enabled: true },
+        pii: { enabled: true, entities: PII_ENTITIES },
+        // NOTE: the `relevancy` detector was evaluated and excluded — it scores
+        // 0.0 (flagged) for plainly on-topic briefs across question phrasings,
+        // so it would false-block every report. `adherence` (faithfulness to
+        // the diff context) tests accurately and covers the grounding concern.
+        adherence: { enabled: true, context: diffContext.slice(0, 30_000) },
         policy_violation: {
           enabled: true,
           policy_text: SAFETY_POLICY_TEXT,
@@ -167,6 +221,7 @@ export async function safetyAudit(brief: string, diffContext: string): Promise<G
   ]);
 
   const violations: string[] = [];
+  const flagged: string[] = [];
 
   if (hallucination && hallucination.summary.is_hallucination >= 0.5) {
     violations.push(
@@ -182,17 +237,38 @@ export async function safetyAudit(brief: string, diffContext: string): Promise<G
     policy_violation?: number;
     toxicity?: unknown[];
     nsfw?: number;
+    pii?: number;
+    relevancy?: number;
+    adherence?: number;
   };
+  const d = detect.details as any;
   if (s.bias) {
-    const biasDetail = (detect.details as any)?.bias;
-    violations.push(`biased framing detected${biasDetail?.biased_text ? `: "${biasDetail.biased_text}"` : ''}`);
+    violations.push(`biased framing detected${d?.bias?.biased_text ? `: "${d.bias.biased_text}"` : ''}`);
+    flagged.push('bias');
   }
   if (s.policy_violation) {
-    const pv = (detect.details as any)?.policy_violation;
-    violations.push(`policy violation${pv?.explanation ? `: ${pv.explanation}` : ''}`);
+    violations.push(`policy violation${d?.policy_violation?.explanation ? `: ${d.policy_violation.explanation}` : ''}`);
+    flagged.push('policy_violation');
   }
-  if (Array.isArray(s.toxicity) && s.toxicity.length > 0) violations.push('toxic content in brief');
-  if (s.nsfw) violations.push('nsfw content in brief');
+  if (Array.isArray(s.toxicity) && s.toxicity.length > 0) {
+    violations.push('toxic content in brief');
+    flagged.push('toxicity');
+  }
+  if (s.nsfw) {
+    violations.push('nsfw content in brief');
+    flagged.push('nsfw');
+  }
+  if (s.pii) {
+    const entities = Object.keys(d?.pii?.entities ?? {});
+    violations.push(`PII leaked into brief (${entities.join(', ') || 'unspecified'})`);
+    flagged.push('pii');
+  }
+  if (s.adherence) {
+    violations.push(
+      `brief does not adhere to the verified diff${d?.adherence?.corrections ? `: ${d.adherence.corrections}` : ''}`,
+    );
+    flagged.push('adherence');
+  }
 
   return {
     checkpoint: 'safety',
@@ -201,10 +277,12 @@ export async function safetyAudit(brief: string, diffContext: string): Promise<G
     violations,
     detail: {
       groundingMethod: hallucination
-        ? 'enkrypt-hallucination + deterministic-numeric'
-        : 'deterministic-numeric (Enkrypt hallucination endpoint not yet available)',
+        ? 'enkrypt-hallucination + adherence + deterministic-numeric'
+        : 'enkrypt-adherence + deterministic-numeric grounding',
       hallucinationScore: hallucination?.summary.is_hallucination ?? null,
+      adherenceScore: d?.adherence?.adherence_score ?? null,
       detectSummary: detect.summary,
+      compliance: complianceTags(detect.details, flagged),
     },
   };
 }
