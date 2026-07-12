@@ -12,11 +12,15 @@ import {
 import { competitiveIntelWorkflow } from './workflows/competitive-intel-workflow';
 import { growthBriefAgent } from './agents/growth-brief-agent';
 import { qdrant } from './lib/qdrant';
+import { apiRoutes } from './api/routes';
 
 export const mastra = new Mastra({
   workflows: { competitiveIntelWorkflow },
   agents: { growthBriefAgent },
   vectors: { qdrant },
+  server: {
+    apiRoutes, // Hono read-path for the dashboard: /api/briefs, /api/briefs/:id, /api/status
+  },
   storage: new MastraCompositeStore({
     id: 'composite-storage',
     default: new LibSQLStore({

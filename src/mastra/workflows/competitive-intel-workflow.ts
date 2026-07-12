@@ -254,23 +254,44 @@ const persistStep = createStep({
       diff: inputData.diff,
     });
 
-    // Archive only green-lit briefs into long-term semantic memory
-    if (inputData.greenLight) {
-      await ensureCollections();
-      const vector = await embedText(inputData.brief.slice(0, 8000));
-      await qdrant.upsert({
-        indexName: GROWTH_BRIEFS,
-        vectors: [vector],
-        metadata: [
-          {
-            weekOf: inputData.diff.weekOf,
-            briefId,
-            greenLight: true,
-            briefMarkdown: inputData.brief, // full text — Qdrant is the durable archive
+    // Archive EVERY brief (green or not) into long-term memory — Qdrant is the
+    // durable read source for the dashboard (intel.db is ephemeral in the cloud).
+    await ensureCollections();
+    // Dedupe re-runs for the same week before writing the fresh point.
+    await qdrant
+      .deleteVectors({ indexName: GROWTH_BRIEFS, filter: { weekOf: inputData.diff.weekOf } })
+      .catch(() => {});
+    const vector = await embedText(inputData.brief.slice(0, 8000));
+    await qdrant.upsert({
+      indexName: GROWTH_BRIEFS,
+      vectors: [vector],
+      metadata: [
+        {
+          briefId,
+          weekOf: inputData.diff.weekOf,
+          createdAt: new Date().toISOString(),
+          greenLight: inputData.greenLight,
+          briefMarkdown: inputData.brief, // full text — Qdrant is the durable archive
+          competitors: inputData.diff.diffs.map(c => ({
+            competitor: c.competitor,
+            status: c.status,
+            productCount: c.productCount,
+            newSkus: c.newSkus.length,
+            priceChanges: c.priceChanges.length,
+            titleChanges: c.titleChanges.length,
+          })),
+          grounding: {
+            greenLight: inputData.grounding.greenLight,
+            violations: inputData.grounding.violations,
           },
-        ],
-      });
-    }
+          safety: {
+            greenLight: inputData.safety.greenLight,
+            violations: inputData.safety.violations,
+            method: (inputData.safety.detail?.groundingMethod as string) ?? null,
+          },
+        },
+      ],
+    });
 
     return {
       briefId,
