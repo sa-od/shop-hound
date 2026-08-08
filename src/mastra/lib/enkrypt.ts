@@ -40,7 +40,7 @@ async function enkryptPost<T>(path: string, body: unknown, extraHeaders?: Record
 // Managed guardrails policy on the Enkrypt platform (created via
 // /guardrails/add-policy): the grounding detector set lives as a named,
 // centrally-editable deployment instead of inline per-call config. The
-// output-side audit stays inline because `adherence` needs per-call context.
+// output-side audit stays inline (its policy_violation text is call-specific).
 const GROUNDING_POLICY = 'shophound-grounding';
 
 interface DetectResponse {
@@ -63,10 +63,13 @@ function disabledVerdict(checkpoint: 'grounding' | 'safety'): GuardrailVerdict {
   };
 }
 
-// PII entities scanned on both checkpoints. Deliberately EXCLUDES person_name:
-// products are routinely named after people (eyewear: "Erika", "Wayfarer") and
-// would false-positive; contact details are the real leak vector.
-const PII_ENTITIES = ['email', 'phone_number'];
+// PII entities per checkpoint. person_name is excluded everywhere (products are
+// routinely named after people — "Erika", "Wayfarer"). phone_number is excluded
+// on INPUT: numeric Shopify product IDs (e.g. 9798669205721) false-match as
+// phone numbers and quarantined legitimate runs for weeks. The generated brief
+// is prose without raw IDs, so the output audit keeps the phone check.
+const INPUT_PII_ENTITIES = ['email'];
+const OUTPUT_PII_ENTITIES = ['email', 'phone_number'];
 
 /** Pull compliance-framework tags (OWASP LLM Top-10, NIST AI RMF, EU AI Act…) for flagged detectors. */
 function complianceTags(details: Record<string, unknown>, flagged: string[]): Record<string, unknown> {
@@ -90,21 +93,34 @@ export async function groundingCheck(diffText: string): Promise<GuardrailVerdict
   const text = diffText.slice(0, 30_000);
   // Prefer the managed policy deployment; fall back to inline detector config
   // so the guardrail never silently weakens if the policy is renamed/deleted.
-  const res = await enkryptPost<DetectResponse>(
-    '/guardrails/policy/detect',
-    { text },
-    { 'x-enkrypt-policy': GROUNDING_POLICY },
-  ).catch(err => {
-    console.warn(`[enkrypt] policy "${GROUNDING_POLICY}" unavailable, using inline detectors:`, String(err).slice(0, 150));
-    return enkryptPost<DetectResponse>('/guardrails/detect', {
-      text,
-      detectors: {
-        injection_attack: { enabled: true },
-        toxicity: { enabled: true },
-        pii: { enabled: true, entities: PII_ENTITIES },
-      },
+  // If Enkrypt itself is unreachable/incompatible (their API has drifted
+  // before), FAIL CLOSED with a persisted verdict instead of killing the run.
+  let res: DetectResponse;
+  try {
+    res = await enkryptPost<DetectResponse>(
+      '/guardrails/policy/detect',
+      { text },
+      { 'x-enkrypt-policy': GROUNDING_POLICY },
+    ).catch(err => {
+      console.warn(`[enkrypt] policy "${GROUNDING_POLICY}" unavailable, using inline detectors:`, String(err).slice(0, 150));
+      return enkryptPost<DetectResponse>('/guardrails/detect', {
+        text,
+        detectors: {
+          injection_attack: { enabled: true },
+          toxicity: { enabled: true },
+          pii: { enabled: true, entities: INPUT_PII_ENTITIES },
+        },
+      });
     });
-  });
+  } catch (err) {
+    return {
+      checkpoint: 'grounding',
+      greenLight: false,
+      enkryptEnabled: true,
+      violations: [`grounding guardrail unavailable — input treated as unverified: ${String(err).slice(0, 200)}`],
+      detail: { enkryptError: true },
+    };
+  }
 
   const violations: string[] = [];
   const flagged: string[] = [];
@@ -169,7 +185,8 @@ export function verifyNumericGrounding(brief: string, diffContext: string): stri
   return violations;
 }
 
-// The instruction the reasoning agent answers — relevancy is judged against it.
+// The instruction the reasoning agent answers — the hallucination endpoint
+// judges the brief against it.
 const BRIEF_INSTRUCTION =
   'Write a weekly competitive intelligence growth brief strictly grounded in the provided structured diff data.';
 
@@ -177,9 +194,7 @@ const BRIEF_INSTRUCTION =
  * SAFETY checkpoint (output side) — three layers:
  *  1. Grounding audit — Enkrypt /guardrails/hallucination when available,
  *     deterministic numeric verification always. PRD metric: 0% hallucination.
- *  2. RAG-grounding detectors — relevancy (does the brief answer the brief
- *     instruction?) and adherence (does every claim stick to the diff context?).
- *  3. Content detectors — bias, toxicity, nsfw, PII leakage, and policy
+ *  2. Content detectors — bias, toxicity, nsfw, PII leakage, and policy
  *     violations (price-fixing, ToS) against the custom compliance policy.
  */
 export async function safetyAudit(brief: string, diffContext: string): Promise<GuardrailVerdict> {
@@ -197,28 +212,45 @@ export async function safetyAudit(brief: string, diffContext: string): Promise<G
     return null;
   });
 
-  const [hallucination, detect] = await Promise.all([
-    hallucinationPromise,
-    enkryptPost<DetectResponse>('/guardrails/detect', {
-      text: brief.slice(0, 30_000),
-      detectors: {
-        bias: { enabled: true },
-        toxicity: { enabled: true },
-        nsfw: { enabled: true },
-        pii: { enabled: true, entities: PII_ENTITIES },
-        // NOTE: the `relevancy` detector was evaluated and excluded — it scores
-        // 0.0 (flagged) for plainly on-topic briefs across question phrasings,
-        // so it would false-block every report. `adherence` (faithfulness to
-        // the diff context) tests accurately and covers the grounding concern.
-        adherence: { enabled: true, context: diffContext.slice(0, 30_000) },
-        policy_violation: {
-          enabled: true,
-          policy_text: SAFETY_POLICY_TEXT,
-          need_explanation: true,
+  // NOTE on detector history (Enkrypt's detect API has drifted between
+  // releases): `relevancy` was evaluated and excluded (false-flags on-topic
+  // briefs); `adherence` worked in July 2026 but was later REMOVED upstream
+  // ("Unknown detector(s): adherence") and crashed the pipeline for weeks —
+  // deterministic numeric grounding remains the always-on grounding audit.
+  let hallucination: HallucinationResponse | null;
+  let detect: DetectResponse;
+  try {
+    [hallucination, detect] = await Promise.all([
+      hallucinationPromise,
+      enkryptPost<DetectResponse>('/guardrails/detect', {
+        text: brief.slice(0, 30_000),
+        detectors: {
+          bias: { enabled: true },
+          toxicity: { enabled: true },
+          nsfw: { enabled: true },
+          pii: { enabled: true, entities: OUTPUT_PII_ENTITIES },
+          policy_violation: {
+            enabled: true,
+            policy_text: SAFETY_POLICY_TEXT,
+            need_explanation: true,
+          },
         },
-      },
-    }),
-  ]);
+      }),
+    ]);
+  } catch (err) {
+    // FAIL CLOSED, don't kill the run: the brief persists as not-green with an
+    // explicit unaudited flag (plus whatever the deterministic check finds).
+    return {
+      checkpoint: 'safety',
+      greenLight: false,
+      enkryptEnabled: true,
+      violations: [
+        `safety audit unavailable — brief is UNAUDITED, no green light: ${String(err).slice(0, 200)}`,
+        ...verifyNumericGrounding(brief, diffContext),
+      ],
+      detail: { enkryptError: true, groundingMethod: 'deterministic-numeric only (Enkrypt detect failed)' },
+    };
+  }
 
   const violations: string[] = [];
   const flagged: string[] = [];
@@ -238,8 +270,6 @@ export async function safetyAudit(brief: string, diffContext: string): Promise<G
     toxicity?: unknown[];
     nsfw?: number;
     pii?: number;
-    relevancy?: number;
-    adherence?: number;
   };
   const d = detect.details as any;
   if (s.bias) {
@@ -263,12 +293,6 @@ export async function safetyAudit(brief: string, diffContext: string): Promise<G
     violations.push(`PII leaked into brief (${entities.join(', ') || 'unspecified'})`);
     flagged.push('pii');
   }
-  if (s.adherence) {
-    violations.push(
-      `brief does not adhere to the verified diff${d?.adherence?.corrections ? `: ${d.adherence.corrections}` : ''}`,
-    );
-    flagged.push('adherence');
-  }
 
   return {
     checkpoint: 'safety',
@@ -277,10 +301,9 @@ export async function safetyAudit(brief: string, diffContext: string): Promise<G
     violations,
     detail: {
       groundingMethod: hallucination
-        ? 'enkrypt-hallucination + adherence + deterministic-numeric'
-        : 'enkrypt-adherence + deterministic-numeric grounding',
+        ? 'enkrypt-hallucination + deterministic-numeric'
+        : 'deterministic-numeric grounding (Enkrypt hallucination endpoint unavailable)',
       hallucinationScore: hallucination?.summary.is_hallucination ?? null,
-      adherenceScore: d?.adherence?.adherence_score ?? null,
       detectSummary: detect.summary,
       compliance: complianceTags(detect.details, flagged),
     },
