@@ -8,6 +8,25 @@ const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4111";
 // full minute and wake the backend before firing the run.
 export const maxDuration = 60;
 
+const WAKE_BUDGET_MS = 35_000;
+const START_BUDGET_MS = 15_000;
+
+/** Pull a readable line out of whatever the workflow put in `error`. */
+function errText(err: unknown): string {
+  if (!err) return "no detail";
+  if (typeof err === "string") return err.slice(0, 300);
+  if (typeof err === "object" && "message" in err) {
+    return String((err as { message: unknown }).message).slice(0, 300);
+  }
+  return JSON.stringify(err).slice(0, 300);
+}
+
+/** Node rejects an `AbortSignal.timeout` fetch as TimeoutError (older: AbortError). */
+function isTimeout(e: unknown): boolean {
+  const name = (e as { name?: string })?.name;
+  return name === "TimeoutError" || name === "AbortError";
+}
+
 /**
  * Weekly analysis trigger, invoked by Vercel Cron (see dashboard/vercel.json).
  * Exists because the Mastra Cloud container's own cron only fires while the
@@ -24,7 +43,7 @@ export async function GET(req: Request) {
   // Phase 1 — wake the backend: poll /status until it answers (cold start can
   // take tens of seconds after weeks of inactivity).
   let awake = false;
-  const wakeDeadline = Date.now() + 35_000;
+  const wakeDeadline = Date.now() + WAKE_BUDGET_MS;
   while (Date.now() < wakeDeadline) {
     try {
       const res = await fetch(`${API}/status`, {
@@ -44,31 +63,78 @@ export async function GET(req: Request) {
     // Report honestly so Vercel's cron log shows a real failure — the first
     // version swallowed errors and logged missed Mondays as successes.
     return NextResponse.json(
-      { ok: false, error: "backend did not wake within 35s" },
+      { ok: false, stage: "wake", error: `backend did not wake within ${WAKE_BUDGET_MS / 1000}s` },
       { status: 502 },
     );
   }
 
   // Phase 2 — start the run. Empty competitors → backend falls back to its
-  // COMPETITOR_STORES env var. start-async returns once the run is accepted;
-  // the multi-minute workflow continues server-side.
+  // COMPETITOR_STORES env var.
+  //
+  // `start-async` is "async" only in the sense that it does not stream: the
+  // handler awaits the entire workflow before responding. So the two outcomes
+  // are the opposite of what they look like, and both must be read carefully:
+  //
+  //   • A response arrives inside our window → the workflow already finished.
+  //     For a run that normally takes 60-90s that means it died early, and the
+  //     body says so with { status: "failed", error } under an HTTP *200*.
+  //   • Our own timeout fires → the run is still executing server-side. That
+  //     is the healthy path, not an error.
+  //
+  // The previous version had this inverted — it trusted HTTP 200 without ever
+  // reading the body and returned 502 on the timeout — which is why four
+  // consecutive dead Mondays (a lapsed embeddings-provider subscription,
+  // failing in ~1s) were logged by Vercel Cron as successes.
+  const fired = new Date().toISOString();
   try {
     const res = await fetch(`${API}/api/workflows/competitiveIntelWorkflow/start-async`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ inputData: { competitors: [] } }),
-      signal: AbortSignal.timeout(15_000),
+      signal: AbortSignal.timeout(START_BUDGET_MS),
     });
-    return NextResponse.json({
-      ok: true,
-      backendStatus: res.status,
-      fired: new Date().toISOString(),
-    });
+
+    const body = (await res.json().catch(() => null)) as
+      | { status?: string; error?: unknown }
+      | null;
+
+    if (!res.ok) {
+      return NextResponse.json(
+        {
+          ok: false,
+          stage: "start",
+          error: `backend rejected the run (HTTP ${res.status})`,
+          detail: errText(body ?? (await res.text().catch(() => null))),
+          fired,
+        },
+        { status: 502 },
+      );
+    }
+
+    // HTTP 200 but the workflow itself reported a non-success terminal state.
+    if (body?.status && body.status !== "success") {
+      return NextResponse.json(
+        {
+          ok: false,
+          stage: "workflow",
+          error: `workflow ${body.status}`,
+          detail: errText(body.error),
+          fired,
+        },
+        { status: 500 },
+      );
+    }
+
+    return NextResponse.json({ ok: true, status: body?.status ?? "success", fired });
   } catch (e) {
-    // A timeout here can still mean the run started (gateway held the request
-    // while the workflow spun up) — but surface it so the cron log is truthful.
+    if (isTimeout(e)) {
+      // Expected for a healthy run: it outlived our window and continues
+      // server-side. Check /briefs (or the backend's run history) for the
+      // outcome — we genuinely cannot know it yet from here.
+      return NextResponse.json({ ok: true, status: "running", fired });
+    }
     return NextResponse.json(
-      { ok: false, error: `start-async did not confirm: ${String(e).slice(0, 150)}` },
+      { ok: false, stage: "start", error: `could not reach backend: ${errText(e)}`, fired },
       { status: 502 },
     );
   }
