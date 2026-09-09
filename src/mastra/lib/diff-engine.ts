@@ -12,9 +12,35 @@ import type { CompetitorDiff, CompetitorSnapshot, NormalizedProduct } from './ty
  * 3. Leftovers → genuinely new / removed SKUs.
  */
 
-// Tuned for Qwen3-Embedding space: renamed-same-product ≈ 0.98, similar-but-
-// different products ≈ 0.89. 0.93 gives margin on both sides.
-const SEMANTIC_MATCH_THRESHOLD = 0.93;
+// Measured, not assumed — on the real allbirds.com baseline (291 products) in
+// text-embedding-3-small @ 1024 dims.
+//
+// The old value of 0.93 claimed "similar-but-different products ≈ 0.89", which
+// this catalog does not bear out in either embedding space. Scored against the
+// Qwen vectors the previous pipeline actually stored, 568/582 points (97.6%)
+// had a DIFFERENT product within 0.93 — so the threshold was never protective;
+// it simply never fired, because pass 2 only runs on ID-unmatched products and
+// the catalog had been stable.
+//
+// The structural problem: distinct SKUs here differ by one word, and score
+// higher against each other than a renamed product scores against its own old
+// title. The worst real pair is 0.9968:
+//   "Women's Tree Dasher 2 - Blizzard (Blizzard/Black Sole)"
+//   "Women's Tree Dasher 2 - Blizzard (Blizzard Sole)"
+// No threshold separates that from a genuine re-list, and dropping vendor/tags
+// from the embedding text does not help (title-only: worst pair still 0.9859).
+//
+// So 0.997 sits just above the worst measured false-merge pair. Rescue is rare
+// by design. That bias is deliberate: a missed rescue shows up as a visible
+// "1 removed + 1 new SKU" that a reader can discount, whereas a false merge
+// silently emits a fabricated price change into a brief whose entire premise is
+// that every number is verbatim-grounded — and Enkrypt would not catch it,
+// because the number *is* present in the diff. The diff would just be wrong.
+//
+// Sub-threshold hits are unaffected: they still supply `closestExisting`.
+// Making rescue actually work needs a non-semantic key (product handle, the
+// vendor's own master/style tag, price proximity) rather than a better number.
+const SEMANTIC_MATCH_THRESHOLD = 0.997;
 // Concurrent Qdrant rescue queries (fan-out cap)
 const RESCUE_CONCURRENCY = 8;
 
