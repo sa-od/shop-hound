@@ -1,6 +1,6 @@
 import { Agent } from "@mastra/core/agent";
 import { Memory } from "@mastra/memory";
-import { featherlessChatModel } from "../lib/featherless";
+import { openaiChatModel } from "../lib/openai";
 import { scrapeLiveTool } from "../tools/scrape-live-tool";
 import { semanticQueryTool } from "../tools/semantic-query-tool";
 
@@ -13,7 +13,7 @@ import { semanticQueryTool } from "../tools/semantic-query-tool";
 export const growthBriefAgent = new Agent({
   id: "growth-brief-agent",
   name: "Growth Brief Agent",
-  model: () => featherlessChatModel(), // lazy: resolves per-call, after env is loaded
+  model: () => openaiChatModel(), // lazy: resolves per-call, after env is loaded
   instructions: `You are a competitive intelligence analyst writing a weekly "Growth Brief" for a Shopify merchant.
 
 You will receive a VERIFIED structured diff of competitor catalog changes (new SKUs, removed SKUs, price changes, title changes). This diff is the ONLY source of truth.

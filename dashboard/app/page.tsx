@@ -49,7 +49,7 @@ export default async function Home() {
         )}
       </main>
       <footer className="border-t border-zinc-800/80 px-5 py-6 text-center text-xs text-zinc-600">
-        Mastra · Enkrypt AI · Qdrant · Featherless
+        Mastra · Enkrypt AI · Qdrant · OpenAI
       </footer>
     </>
   );

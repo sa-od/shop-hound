@@ -53,6 +53,21 @@ export async function ensureCollections(): Promise<void> {
   for (const indexName of [COMPETITOR_PRODUCTS, GROWTH_BRIEFS, SNAPSHOT_RECORDS]) {
     if (!existing.includes(indexName)) {
       await qdrant.createIndex({ indexName, dimension, metric: 'cosine' });
+      continue;
+    }
+    // A collection's vector width is fixed at creation, so an embedding-model
+    // swap that changes the width makes every upsert fail — previously deep
+    // inside the run, with a raw Qdrant error naming neither cause nor fix.
+    // Fail here instead, naming both numbers.
+    const stats = await qdrant.describeIndex({ indexName });
+    if (stats.dimension !== dimension) {
+      throw new Error(
+        `Qdrant collection "${indexName}" is ${stats.dimension}-dim but the configured ` +
+          `embedding model produces ${dimension}-dim vectors. Either pin the model back to ` +
+          `${stats.dimension} dims (EMBEDDING_DIMENSIONS in lib/openai.ts) or recreate the ` +
+          `collection — recreating loses its payloads, which for snapshot_records means ` +
+          `losing the week-over-week diff baselines.`,
+      );
     }
   }
 

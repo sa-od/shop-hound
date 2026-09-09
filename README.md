@@ -10,7 +10,7 @@ it never makes the brief.
 🔗 **Live app:** https://shop-hound.vercel.app/
 ⚙️ **Backend API:** https://my-mastara-engine.server.mastra.cloud/briefs
 
-Built for the **HiDevs × Mastra Hackathon 2026** on **Mastra · Qdrant · Enkrypt AI** (+ Featherless · Next.js · Vercel).
+Built for the **HiDevs × Mastra Hackathon 2026** on **Mastra · Qdrant · Enkrypt AI** (+ OpenAI · Next.js · Vercel).
 
 ---
 
@@ -66,7 +66,7 @@ npm run dev                       # Mastra backend + Studio at http://localhost:
 cd dashboard && npm run dev       # Next.js dashboard at http://localhost:3000
 ```
 
-Requires env vars: `FEATHERLESS_API_KEY`, `QDRANT_URL`, `QDRANT_API_KEY`,
+Requires env vars: `OPENAI_API_KEY`, `QDRANT_URL`, `QDRANT_API_KEY`,
 `ENKRYPT_API_KEY` (see `.env` for the full list). Set `COMPETITOR_STORES` to control the
 weekly auto-run's default competitor set.
 
@@ -89,7 +89,7 @@ A 7-step Mastra workflow runs the pipeline:
 - Deployed on **Mastra Cloud**.
 
 ### 🔷 Qdrant — the durable brain
-- Three collections over cosine similarity (1024-dim Featherless embeddings):
+- Three collections over cosine similarity (1024-dim embeddings):
   `competitor_products` (per-product vectors), `snapshot_records` (weekly catalog
   baselines), `growth_briefs` (archived audited briefs). Keyword **payload indexes**
   power strict-mode filtered search — the same payload-partitioning pattern Qdrant
@@ -137,8 +137,11 @@ A 7-step Mastra workflow runs the pipeline:
   Qdrant payload filters).
 
 ### 🤖 Supporting stack
-- **Featherless AI** — all inference via one OpenAI-compatible endpoint: `Qwen2.5-72B`
-  for brief writing, `Qwen3-Embedding-0.6B` (1024-dim) for vectors.
+- **OpenAI** — all inference via one endpoint: `gpt-4o-mini` for brief writing,
+  `text-embedding-3-small` for vectors, pinned to **1024 dims** via the `dimensions`
+  parameter so it matches the collections created under the previous provider
+  (see `EMBEDDING_DIMENSIONS` in `src/mastra/lib/openai.ts` — changing it means
+  recreating every collection and losing the diff baselines).
 - **Next.js + Vercel** — the merchant dashboard, reading the Mastra API cross-origin.
 - **Shopify `/products.json`** — zero-auth structured ingestion of catalog, pricing, and SKUs.
 
@@ -147,7 +150,7 @@ A 7-step Mastra workflow runs the pipeline:
 ## 📊 Data flow
 
 ```
-scrape (/products.json) → embed (Featherless) → upsert competitor_products
+scrape (/products.json) → embed (OpenAI)      → upsert competitor_products
                                               → save snapshot_records
         ↓
 diff current vs previous snapshot  ──►  structured change set

@@ -1,20 +1,34 @@
 import { embedMany, embed } from 'ai';
-import { featherlessEmbeddingModel, FEATHERLESS_EMBEDDING_MODEL } from './featherless';
+import {
+  openaiEmbeddingModel,
+  OPENAI_EMBEDDING_MODEL,
+  EMBEDDING_DIMENSIONS,
+  EMBEDDING_PROVIDER_OPTIONS,
+} from './openai';
 import type { NormalizedProduct } from './types';
 
 // PRD §5.1 / §6: ONE embedding model everywhere (ingestion, diffing, agent queries)
-export const EMBEDDING_MODEL_ID = FEATHERLESS_EMBEDDING_MODEL;
+export const EMBEDDING_MODEL_ID = OPENAI_EMBEDDING_MODEL;
 
 let _dimension: number | null = null;
 
 /**
- * Embedding dimension probed from the live model (cached). Keeps the Qdrant
- * collection schema locked to whatever the configured model actually returns —
- * a silent model/dimension mismatch can never happen.
+ * Embedding dimension probed from the live model (cached). We ask for
+ * EMBEDDING_DIMENSIONS explicitly, but we still probe rather than trust the
+ * constant: if a provider or model ever ignores the `dimensions` parameter we
+ * want to fail here, loudly, instead of writing wrong-width vectors at every
+ * Qdrant collection created from this number.
  */
 export async function embeddingDimension(): Promise<number> {
   if (_dimension === null) {
     const probe = await embedText('dimension probe');
+    if (probe.length !== EMBEDDING_DIMENSIONS) {
+      throw new Error(
+        `Embedding width mismatch: ${EMBEDDING_MODEL_ID} returned ${probe.length} dims, ` +
+          `but ${EMBEDDING_DIMENSIONS} was requested. The Qdrant collections are fixed at ` +
+          `${EMBEDDING_DIMENSIONS} — see EMBEDDING_DIMENSIONS in lib/openai.ts.`,
+      );
+    }
     _dimension = probe.length;
   }
   return _dimension;
@@ -29,15 +43,23 @@ export function productToEmbeddingText(p: NormalizedProduct): string {
   return [p.title, p.productType, p.vendor, p.tags.join(' ')].filter(Boolean).join(' | ');
 }
 
-const EMBED_BATCH = 64; // small chunks: fast per call, cheap to retry, resilient to blips
-const EMBED_CONCURRENCY = 4; // parallel batches — tune to the Featherless plan's concurrency limit
+// OpenAI accepts up to 2048 inputs per embeddings call, so bigger batches and
+// less parallelism means far fewer requests for the same work — which is what
+// rate limits actually count. 256 short product strings is ~8k tokens, well
+// under the per-request token ceiling, and still cheap to retry.
+const EMBED_BATCH = 256;
+const EMBED_CONCURRENCY = 2;
 const EMBED_RETRIES = 4;
 
 async function embedChunk(chunk: string[]): Promise<number[][]> {
   let lastErr: unknown;
   for (let attempt = 1; attempt <= EMBED_RETRIES; attempt++) {
     try {
-      const { embeddings } = await embedMany({ model: featherlessEmbeddingModel(), values: chunk });
+      const { embeddings } = await embedMany({
+        model: openaiEmbeddingModel(),
+        values: chunk,
+        providerOptions: EMBEDDING_PROVIDER_OPTIONS,
+      });
       return embeddings;
     } catch (err) {
       lastErr = err;
@@ -72,9 +94,10 @@ export async function embedProducts(products: NormalizedProduct[]): Promise<numb
 
 export async function embedText(text: string): Promise<number[]> {
   const { embedding } = await embed({
-    model: featherlessEmbeddingModel(),
+    model: openaiEmbeddingModel(),
     value: text,
     maxRetries: 4,
+    providerOptions: EMBEDDING_PROVIDER_OPTIONS,
   });
   return embedding;
 }
