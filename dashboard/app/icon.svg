@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32">
+  <!-- Matches the header mark in app/components/Header.tsx: a lucide Radar
+       glyph in emerald on a dark tile. Detail strokes from the full 24px icon
+       (the 4px accent dots and the short inner arc) are dropped here — they
+       turn to mush at 16px, which is the size that actually matters. -->
+  <rect width="32" height="32" rx="8" fill="#09090b"/>
+  <rect x="0.75" y="0.75" width="30.5" height="30.5" rx="7.25" fill="none"
+        stroke="#10b981" stroke-opacity="0.35" stroke-width="1.5"/>
+  <g transform="translate(4 4)" fill="none" stroke="#34d399" stroke-width="2.2"
+     stroke-linecap="round" stroke-linejoin="round">
+    <path d="M2.29 9.62A10 10 0 1 0 21.31 8.35"/>
+    <path d="M16.24 7.76A6 6 0 1 0 8.23 16.67"/>
+    <path d="m13.41 10.59 5.66-5.66"/>
+    <circle cx="12" cy="12" r="2" fill="#34d399" stroke="none"/>
+  </g>
+</svg>
