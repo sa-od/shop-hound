@@ -20,8 +20,13 @@ import { listBriefs } from '../lib/briefs-store';
  * scrape → embed+snapshot (Qdrant) → deterministic diff → Enkrypt grounding →
  * reasoning agent → Enkrypt safety audit → persist + archive.
  *
- * Runs weekly via the declared cron schedule; also startable manually from
- * Studio or the API.
+ * Weekly cadence (PRD §13, Mondays 09:00 UTC) is owned by the Vercel cron in
+ * dashboard/vercel.json, which calls start-async on this workflow. This file
+ * deliberately declares no `schedule` of its own: the container-side scheduler
+ * only fires while the container is awake, so it cannot be relied on — and
+ * while both were declared, every Monday ran the full paid analysis twice
+ * (the container-side job fired the moment Vercel's request woke the box,
+ * ~1s apart). Also startable manually from Studio or the API.
  */
 
 const DEFAULT_COMPETITORS = (process.env.COMPETITOR_STORES ?? '')
@@ -393,11 +398,6 @@ export const competitiveIntelWorkflow = createWorkflow({
   id: 'competitive-intel-workflow',
   inputSchema: workflowInputSchema,
   outputSchema: persistStep.outputSchema,
-  schedule: {
-    cron: '0 9 * * 1', // every Monday 09:00 — weekly cadence (PRD §13)
-    timezone: 'UTC',
-    inputData: { competitors: [] },
-  },
 })
   .then(scrapeStep)
   .then(embedAndSnapshotStep)
