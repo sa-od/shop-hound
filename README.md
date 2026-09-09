@@ -70,6 +70,41 @@ Requires env vars: `OPENAI_API_KEY`, `QDRANT_URL`, `QDRANT_API_KEY`,
 `ENKRYPT_API_KEY` (see `.env` for the full list). Set `COMPETITOR_STORES` to control the
 weekly auto-run's default competitor set.
 
+### 🚢 Deploy the backend
+
+**Pushing to GitHub does not deploy the backend.** Mastra Cloud is deployed
+explicitly from the CLI; only the Vercel dashboard tracks git.
+
+```shell
+npm run build
+npx mastra server deploy -y --skip-build --env-file .env.production --skip-preflight
+```
+
+Both flags are load-bearing:
+
+- `--env-file` — the repo has two env files (`.env`, `.env.production`) and the
+  deploy refuses to guess. **`.env.production` is the one that ships**, so it must
+  carry `OPENAI_API_KEY`. It is gitignored and therefore easy to leave behind when
+  `.env` is updated — that drift has already blocked one deploy.
+- `--skip-preflight` — preflight rejects `file:./intel.db` and `file:./mastra.db`
+  as host-local storage. That is by design: `intel.db` is a disposable mirror
+  (its writes are `.catch()`-ed) and durable state lives in Qdrant precisely
+  because cloud disks are ephemeral.
+
+⚠️ **Every deploy resets `mastra.db`**, which holds workflow run history and agent
+memory. Briefs and snapshots are unaffected — they live in Qdrant. Export anything
+you need from `/api/workflows/:id/runs` first.
+
+Server env vars can also be changed *without* a deploy (needs `mastra auth login`):
+
+```shell
+npx mastra server env list
+npx mastra server env set OPENAI_API_KEY "$OPENAI_API_KEY"   # sourced, not pasted
+```
+
+Vercel hosts only the dashboard and the weekly cron, and never calls a model — it
+needs no `OPENAI_API_KEY`.
+
 ---
 
 ## 🧠 How it works
