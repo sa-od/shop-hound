@@ -185,6 +185,109 @@ export function verifyNumericGrounding(brief: string, diffContext: string): stri
   return violations;
 }
 
+/** Normalized form for comparing a brief's prose against diff titles. */
+function norm(s: string): string {
+  return s.toLowerCase().replace(/[\u2018\u2019\u201c\u201d]/g, "'").replace(/\s+/g, ' ').replace(/[.,;:!?\u2026]+$/, '').trim();
+}
+
+/** A number in the brief may be a rounded form of the diff's value. */
+function near(value: number, allowed: Set<number>): boolean {
+  for (const a of allowed) {
+    if (a === value) return true;
+    if (Math.abs(a - value) <= 0.5) return true;
+    if (a !== 0 && Math.abs(a - value) / Math.abs(a) <= 0.01) return true;
+  }
+  return false;
+}
+
+interface ProductFacts { title: string; numbers: Set<number> }
+
+/** Every product the diff actually mentions, with the numbers that belong to it. */
+function productFacts(diffContext: string): ProductFacts[] {
+  let diff: any;
+  try { diff = JSON.parse(diffContext); } catch { return []; }
+  const facts: ProductFacts[] = [];
+  for (const d of diff.diffs ?? []) {
+    for (const key of ['newSkus', 'removedSkus', 'priceChanges', 'titleChanges']) {
+      for (const item of d[key] ?? []) {
+        const numbers = new Set<number>();
+        for (const v of [item.price, item.oldPrice, item.newPrice, item.closestExisting?.price]) {
+          if (typeof v === 'number') numbers.add(Math.abs(v));
+        }
+        if (typeof item.changePct === 'number') {
+          numbers.add(Math.abs(item.changePct));
+          numbers.add(Math.abs(Math.round(item.changePct)));
+        }
+        for (const t of [item.title, item.oldTitle, item.newTitle]) {
+          if (typeof t === 'string' && t.trim()) facts.push({ title: t, numbers });
+        }
+      }
+    }
+  }
+  return facts;
+}
+
+const MONEY_OR_PCT = /\$\s?(\d[\d,]*(?:\.\d+)?)|(-?\d+(?:\.\d+)?)\s?%/g;
+
+/**
+ * PRODUCT grounding — the half `verifyNumericGrounding` cannot see.
+ *
+ * That check asks only "does this number appear somewhere in the diff?", so a
+ * real price pinned to the wrong product, or to a product that does not exist,
+ * passes clean. Both were reproduced against live audit context before this
+ * was written. Two rules close it:
+ *
+ *  1. ATTRIBUTION — within a sentence that names known products, every dollar
+ *     amount and percentage must belong to one of those products.
+ *  2. EXISTENCE — a quoted product-looking string must correspond to a product
+ *     in the diff.
+ *
+ * Rule 2 deliberately reads only straight-quoted spans. Briefs vary in style:
+ * one model run quotes titles, another uses **bold** for section labels like
+ * "Price Changes" — treating bold as a title reference would fail legitimate
+ * briefs. Rule 1 carries the weight, and is style-independent because it
+ * matches known titles anywhere in the prose.
+ */
+export function verifyProductGrounding(brief: string, diffContext: string): string[] {
+  const facts = productFacts(diffContext);
+  if (facts.length === 0) return [];
+  const violations: string[] = [];
+  const normBrief = norm(brief);
+
+  // 1 — attribution, per sentence
+  for (const sentence of brief.split(/(?<=[.!?])\s+|\n+/)) {
+    const nSentence = norm(sentence);
+    if (!nSentence) continue;
+    const mentioned = facts.filter(f => nSentence.includes(norm(f.title)));
+    if (mentioned.length === 0) continue; // no product named — global numeric check covers it
+    const allowed = new Set<number>();
+    for (const m of mentioned) for (const n of m.numbers) allowed.add(n);
+    for (const m of sentence.matchAll(MONEY_OR_PCT)) {
+      const value = Math.abs(Number.parseFloat((m[1] ?? m[2]).replace(/,/g, '')));
+      if (!near(value, allowed)) {
+        violations.push(
+          `misattributed number in brief: "${m[0].trim()}" is not a value of ${mentioned.map(x => `"${x.title}"`).join(' / ')}`,
+        );
+      }
+    }
+  }
+
+  // 2 — existence of quoted product references
+  for (const m of brief.matchAll(/"([^"\n]{8,120})"/g)) {
+    const quoted = norm(m[1]);
+    if (!quoted.includes(' ')) continue; // single tokens are rarely product titles
+    const known = facts.some(f => {
+      const t = norm(f.title);
+      return t.includes(quoted) || quoted.includes(t);
+    });
+    if (!known && !norm(diffContext).includes(quoted)) {
+      violations.push(`ungrounded product in brief: "${m[1]}" does not appear in the verified diff`);
+    }
+  }
+
+  return violations;
+}
+
 // The instruction the reasoning agent answers — the hallucination endpoint
 // judges the brief against it.
 const BRIEF_INSTRUCTION =
@@ -247,6 +350,7 @@ export async function safetyAudit(brief: string, diffContext: string): Promise<G
       violations: [
         `safety audit unavailable — brief is UNAUDITED, no green light: ${String(err).slice(0, 200)}`,
         ...verifyNumericGrounding(brief, diffContext),
+        ...verifyProductGrounding(brief, diffContext),
       ],
       detail: { enkryptError: true, groundingMethod: 'deterministic-numeric only (Enkrypt detect failed)' },
     };
@@ -263,6 +367,8 @@ export async function safetyAudit(brief: string, diffContext: string): Promise<G
   // Deterministic numeric grounding — always runs (primary check while the
   // Enkrypt endpoint rolls out, defense-in-depth once it's live)
   violations.push(...verifyNumericGrounding(brief, diffContext));
+  // Attribution + product existence — see verifyProductGrounding.
+  violations.push(...verifyProductGrounding(brief, diffContext));
 
   const s = detect.summary as {
     bias?: number;
@@ -301,8 +407,8 @@ export async function safetyAudit(brief: string, diffContext: string): Promise<G
     violations,
     detail: {
       groundingMethod: hallucination
-        ? 'enkrypt-hallucination + deterministic-numeric'
-        : 'deterministic-numeric grounding (Enkrypt hallucination endpoint unavailable)',
+        ? 'enkrypt-hallucination + deterministic numeric/product grounding'
+        : 'deterministic numeric + product grounding (Enkrypt hallucination detection not yet released by vendor)',
       hallucinationScore: hallucination?.summary.is_hallucination ?? null,
       detectSummary: detect.summary,
       compliance: complianceTags(detect.details, flagged),
