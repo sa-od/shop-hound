@@ -1,4 +1,7 @@
 output.txt
+# macOS Finder metadata — created in any folder opened in Finder, read by
+# nothing here. Bare pattern, so it matches at every depth.
+.DS_Store
 node_modules
 dist
 .mastra
