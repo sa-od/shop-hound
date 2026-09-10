@@ -6,6 +6,10 @@ dist
 .env
 *.db
 *.db-*
+# DuckDB (observability store) — *.db above does not match these, so ~11MB of
+# stale local database was tracked and shipped in every deploy artifact.
+*.duckdb
+*.duckdb.wal
 .netlify
 .vercel
 .env.production
