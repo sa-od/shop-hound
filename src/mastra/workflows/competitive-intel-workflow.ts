@@ -123,7 +123,12 @@ const diffStep = createStep({
   inputSchema: embedAndSnapshotStep.outputSchema,
   outputSchema: z.object({
     diff: structuredDiffSchema,
-    snapshots: z.array(competitorSnapshotSchema),
+    // Titles only, NOT the snapshots. The grounding step is the last consumer
+    // of scraped data and only ever reads product titles, while a full
+    // snapshot is ~250kB for a 294-product store (61% of it `tags`). Mastra
+    // persists every step's input payload AND output, so re-emitting the
+    // snapshots here stored that quarter-megabyte twice more for nothing.
+    scrapedTitles: z.array(z.string()),
     groundingErrors: z.array(z.string()),
   }),
   execute: async ({ inputData }) => {
@@ -154,7 +159,7 @@ const diffStep = createStep({
 
     return {
       diff: { weekOf: inputData.snapshotDate, diffs, unverified: inputData.unverified },
-      snapshots: inputData.snapshots,
+      scrapedTitles: inputData.snapshots.flatMap(s => s.products.map(p => p.title)),
       groundingErrors,
     };
   },
@@ -175,8 +180,7 @@ const groundingStep = createStep({
     // ones that only reach the agent later via tools. (Enkrypt caps at 30k
     // chars; the diff comes first so agent-bound content is always covered.)
     const diffText = JSON.stringify(inputData.diff);
-    const scrapedTitles = inputData.snapshots.flatMap(s => s.products.map(p => p.title)).join('\n');
-    const verdict = await groundingCheck(`${diffText}\n${scrapedTitles}`);
+    const verdict = await groundingCheck(`${diffText}\n${inputData.scrapedTitles.join('\n')}`);
 
     // Merge the deterministic payload-mapping check into the verdict
     if (inputData.groundingErrors.length > 0) {
