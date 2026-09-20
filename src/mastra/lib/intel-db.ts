@@ -47,7 +47,10 @@ async function init(): Promise<Client> {
 export async function saveSnapshot(snapshot: CompetitorSnapshot): Promise<void> {
   const c = await init();
   await c.execute({
-    sql: `INSERT OR REPLACE INTO snapshots (competitor, snapshot_date, products_json) VALUES (?, ?, ?)`,
+    sql: `INSERT INTO snapshots (competitor, snapshot_date, products_json)
+          VALUES (?, ?, ?)
+          ON CONFLICT(competitor, snapshot_date)
+          DO UPDATE SET products_json = excluded.products_json`,
     args: [snapshot.competitor, snapshot.snapshotDate, JSON.stringify(snapshot.products)],
   });
 }
@@ -66,11 +69,15 @@ export async function getPreviousSnapshot(
   });
   const row = res.rows[0];
   if (!row) return null;
-  return competitorSnapshotSchema.parse({
-    competitor,
-    snapshotDate: row.snapshot_date as string,
-    products: JSON.parse(row.products_json as string),
-  });
+  try {
+    return competitorSnapshotSchema.parse({
+      competitor,
+      snapshotDate: row.snapshot_date as string,
+      products: JSON.parse(row.products_json as string),
+    });
+  } catch (err) {
+    throw new Error(`Invalid snapshot for ${competitor} @ ${row.snapshot_date}: ${err instanceof Error ? err.message : err}`);
+  }
 }
 
 export async function saveBrief(args: {

@@ -100,6 +100,30 @@ async function scrollAll(): Promise<BriefDetail[]> {
   return [...byKey.values()].sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
 }
 
+/**
+ * Lightweight list for the dashboard — fetches a single page from Qdrant
+ * (most recent points) and dedupes locally. Avoids the full-scan that
+ * `listBriefs()` performs for the workflow's trend history.
+ */
+export async function listRecentBriefs(limit = 50): Promise<BriefSummary[]> {
+  const res = await scrollPage(0);
+  const briefs = res.points
+    .filter(p => p.payload)
+    .map(p => toDetail(p.payload as Record<string, unknown>));
+
+  // dedupe by (weekOf + competitor set) — same logic as scrollAll
+  const byKey = new Map<string, BriefDetail>();
+  for (const b of briefs) {
+    const competitorKey = b.competitors.map(c => c.competitor).sort().join(',');
+    const key = `${b.weekOf}|${competitorKey}`;
+    const existing = byKey.get(key);
+    if (!existing || b.createdAt > existing.createdAt) byKey.set(key, b);
+  }
+  const sorted = [...byKey.values()].sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
+  return sorted.slice(0, limit).map(({ briefMarkdown, ...summary }) => summary);
+}
+
+/** Full scroll for the workflow trend history — fetches every archived brief. */
 export async function listBriefs(): Promise<BriefSummary[]> {
   const all = await scrollAll();
   // strip the heavy markdown for the list view
@@ -107,18 +131,36 @@ export async function listBriefs(): Promise<BriefSummary[]> {
 }
 
 /**
- * Look up a single brief. The canonical key is the createdAt epoch (unique per
- * run, and URL-safe — raw ISO timestamps with ':' and '.' break Next/Vercel
- * dynamic-route matching). Falls back to the raw createdAt / weekOf / briefId
- * for older links — those may be ambiguous now that a week can hold several
- * briefs, so the newest match (scrollAll is sorted desc) wins.
+ * Look up a single brief. Tries a filtered Qdrant scroll first (fast),
+ * falling back to full scan for older ID formats.
  */
 export async function getBrief(id: string): Promise<BriefDetail | null> {
+  // Fast path: filter by weekOf (most common dashboard URL pattern)
+  try {
+    const res = await client().scroll(GROWTH_BRIEFS, {
+      limit: 10,
+      with_payload: true,
+      with_vector: false,
+      filter: { weekOf: id },
+    });
+    if (res.points.length > 0) {
+      const briefs = res.points
+        .filter(p => p.payload)
+        .map(p => toDetail(p.payload as Record<string, unknown>));
+      // Return newest if multiple match
+      briefs.sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
+      return briefs[0];
+    }
+  } catch {
+    // Filter may not work on older points — fall through to full scan
+  }
+
+  // Slow path: full scan for createdAt epoch or briefId lookups
   const all = await scrollAll();
   return (
     all.find(b => String(Date.parse(b.createdAt)) === id) ??
     all.find(b => b.createdAt === id) ??
-    all.find(b => b.weekOf === id || String(b.briefId) === id) ??
+    all.find(b => String(b.briefId) === id) ??
     null
   );
 }

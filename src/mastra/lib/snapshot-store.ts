@@ -54,9 +54,13 @@ export async function getPreviousSnapshotRecord(
   const latest = candidates[0];
   if (!latest) return null;
 
-  return competitorSnapshotSchema.parse({
-    competitor,
-    snapshotDate: latest.snapshotDate,
-    products: JSON.parse(latest.productsJson),
-  });
+  try {
+    return competitorSnapshotSchema.parse({
+      competitor,
+      snapshotDate: latest.snapshotDate,
+      products: JSON.parse(latest.productsJson),
+    });
+  } catch (err) {
+    throw new Error(`Invalid snapshot record for ${competitor} @ ${latest.snapshotDate}: ${err instanceof Error ? err.message : err}`);
+  }
 }

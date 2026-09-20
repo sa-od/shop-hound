@@ -1,5 +1,5 @@
 import { registerApiRoute } from '@mastra/core/server';
-import { listBriefs, getBrief } from '../lib/briefs-store';
+import { listRecentBriefs, getBrief } from '../lib/briefs-store';
 
 /**
  * Hono API Gateway routes (PRD §10) served by the Mastra server itself.
@@ -18,8 +18,13 @@ export const apiRoutes = [
       tags: ['Dashboard'],
     },
     handler: async c => {
-      const briefs = await listBriefs();
-      return c.json({ briefs });
+      try {
+        const briefs = await listRecentBriefs();
+        return c.json({ briefs });
+      } catch (err) {
+        console.error('[/briefs] error:', err);
+        return c.json({ error: 'Failed to load briefs', code: 'INTERNAL' }, 500);
+      }
     },
   }),
 
@@ -34,9 +39,14 @@ export const apiRoutes = [
       ],
     },
     handler: async c => {
-      const brief = await getBrief(c.req.param('id'));
-      if (!brief) return c.json({ error: 'not found' }, 404);
-      return c.json({ brief });
+      try {
+        const brief = await getBrief(c.req.param('id'));
+        if (!brief) return c.json({ error: 'not found' }, 404);
+        return c.json({ brief });
+      } catch (err) {
+        console.error('[/briefs/:id] error:', err);
+        return c.json({ error: 'Failed to load brief', code: 'INTERNAL' }, 500);
+      }
     },
   }),
 
@@ -48,29 +58,34 @@ export const apiRoutes = [
       tags: ['Dashboard'],
     },
     handler: async c => {
-      const mastra = c.get('mastra');
-      const [briefs, active] = await Promise.all([
-        listBriefs(),
-        mastra
-          .getWorkflow('competitiveIntelWorkflow')
-          .listActiveWorkflowRuns()
-          .then(r => r.runs.length)
-          .catch(() => 0),
-      ]);
-      const last = briefs[0] ?? null;
-      return c.json({
-        running: active > 0,
-        activeRuns: active,
-        lastBrief: last
-          ? {
-              weekOf: last.weekOf,
-              greenLight: last.greenLight,
-              createdAt: last.createdAt,
-              competitorCount: last.competitors.length,
-            }
-          : null,
-        totalBriefs: briefs.length,
-      });
+      try {
+        const mastra = c.get('mastra');
+        const [briefs, active] = await Promise.all([
+          listRecentBriefs(),
+          mastra
+            .getWorkflow('competitiveIntelWorkflow')
+            .listActiveWorkflowRuns()
+            .then(r => r.runs.length)
+            .catch(() => 0),
+        ]);
+        const last = briefs[0] ?? null;
+        return c.json({
+          running: active > 0,
+          activeRuns: active,
+          lastBrief: last
+            ? {
+                weekOf: last.weekOf,
+                greenLight: last.greenLight,
+                createdAt: last.createdAt,
+                competitorCount: last.competitors.length,
+              }
+            : null,
+          totalBriefs: briefs.length,
+        });
+      } catch (err) {
+        console.error('[/status] error:', err);
+        return c.json({ error: 'Failed to load status', code: 'INTERNAL' }, 500);
+      }
     },
   }),
 ];
