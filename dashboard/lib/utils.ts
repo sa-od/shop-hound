@@ -14,7 +14,8 @@ export function formatWeek(weekOf: string) {
 const DOMAIN_RE = /^[a-z0-9]+([-.][a-z0-9]+)*\.[a-z]{2,}$/;
 
 export function isValidDomain(raw: string): boolean {
-  const d = raw.trim().toLowerCase();
+  let d = raw.trim().toLowerCase();
+  d = d.replace(/^https?:\/\//, "").replace(/\/.*$/, "").replace(/:\d+$/, "");
   if (!d || d.length > 253) return false;
   if (["localhost", "localhost.localdomain", "example.test", "injection-demo.test"].includes(d)) return false;
   if (/^\d{1,3}(\.\d{1,3}){3}$/.test(d)) return false;

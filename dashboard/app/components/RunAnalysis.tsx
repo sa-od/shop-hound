@@ -21,7 +21,7 @@ export function RunAnalysis({ lastCreatedAt }: { lastCreatedAt: string | null })
   const run = useCallback(async () => {
     const raw = domains
       .split(",")
-      .map((d) => d.trim())
+      .map((d) => d.trim().replace(/^https?:\/\//, "").replace(/\/.*$/, "").replace(/:\d+$/, ""))
       .filter(Boolean);
     if (raw.length === 0) return;
 
