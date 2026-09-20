@@ -21,7 +21,8 @@ export const mastra = new Mastra({
     id: 'composite-storage',
     default: new LibSQLStore({
       id: 'mastra-storage',
-      url: 'file:./mastra.db',
+      url: process.env.TURSO_URL ?? 'file:./mastra.db',
+      authToken: process.env.TURSO_AUTH_TOKEN,
     }),
   }),
   logger: new PinoLogger({
