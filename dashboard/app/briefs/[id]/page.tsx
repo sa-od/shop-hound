@@ -2,21 +2,13 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ArrowLeft, ShieldCheck, ShieldAlert, FileCheck2, Fingerprint } from "lucide-react";
 import { getBrief, briefTotals } from "@/lib/api";
+import { formatWeek } from "@/lib/utils";
 import { VerifiedBadge, StatChip, CompetitorChip } from "@/app/components/ui";
-import { BriefMarkdown } from "@/app/components/BriefMarkdown";
+import dynamicImport from "next/dynamic";
+
+const BriefMarkdown = dynamicImport(() => import("@/app/components/BriefMarkdown").then(m => m.BriefMarkdown));
 
 export const dynamic = "force-dynamic";
-
-function formatWeek(weekOf: string) {
-  const [y, m, d] = weekOf.split("-").map(Number);
-  if (!y) return weekOf;
-  return new Date(Date.UTC(y, m - 1, d)).toLocaleDateString("en-US", {
-    year: "numeric",
-    month: "long",
-    day: "numeric",
-    timeZone: "UTC",
-  });
-}
 
 export default async function BriefPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;

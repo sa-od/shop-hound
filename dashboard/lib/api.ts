@@ -1,5 +1,4 @@
-// Read-path client for the Mastra Hono API (served at the server root: /briefs, /status).
-const API = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4111';
+import { API } from "./utils";
 
 export interface CompetitorSummary {
   competitor: string;
@@ -43,7 +42,8 @@ async function get<T>(path: string, fallback: T): Promise<T> {
     const res = await fetch(`${API}${path}`, { cache: 'no-store' });
     if (!res.ok) return fallback;
     return (await res.json()) as T;
-  } catch {
+  } catch (err) {
+    console.error(`[api] ${path} failed:`, err);
     return fallback;
   }
 }

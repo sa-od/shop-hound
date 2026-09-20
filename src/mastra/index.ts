@@ -6,12 +6,15 @@ import { MastraCompositeStore } from '@mastra/core/storage';
 import { Observability, MastraStorageExporter, SensitiveDataFilter } from '@mastra/observability';
 import { competitiveIntelWorkflow } from './workflows/competitive-intel-workflow';
 import { growthBriefAgent } from './agents/growth-brief-agent';
+import { scrapeLiveTool } from './tools/scrape-live-tool';
+import { semanticQueryTool } from './tools/semantic-query-tool';
 import { qdrant } from './lib/qdrant';
 import { apiRoutes } from './api/routes';
 
 export const mastra = new Mastra({
   workflows: { competitiveIntelWorkflow },
   agents: { growthBriefAgent },
+  tools: { scrapeLiveTool, semanticQueryTool },
   vectors: { qdrant },
   server: {
     apiRoutes, // Hono read-path for the dashboard: /api/briefs, /api/briefs/:id, /api/status

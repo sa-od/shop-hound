@@ -1,0 +1,23 @@
+export const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4111";
+
+export function formatWeek(weekOf: string) {
+  const [y, m, d] = weekOf.split("-").map(Number);
+  if (!y) return weekOf;
+  return new Date(Date.UTC(y, m - 1, d)).toLocaleDateString("en-US", {
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+    timeZone: "UTC",
+  });
+}
+
+const DOMAIN_RE = /^[a-z0-9]+([-.][a-z0-9]+)*\.[a-z]{2,}$/;
+
+export function isValidDomain(raw: string): boolean {
+  const d = raw.trim().toLowerCase();
+  if (!d || d.length > 253) return false;
+  if (["localhost", "localhost.localdomain", "example.test", "injection-demo.test"].includes(d)) return false;
+  if (/^\d{1,3}(\.\d{1,3}){3}$/.test(d)) return false;
+  if (/^\[/.test(d)) return false;
+  return DOMAIN_RE.test(d);
+}

@@ -3,9 +3,8 @@
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Loader2, CheckCircle2 } from "lucide-react";
+import { API } from "@/lib/utils";
 import type { Status } from "@/lib/api";
-
-const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4111";
 
 /**
  * Live status pill — polls /status so the header reflects reality without a

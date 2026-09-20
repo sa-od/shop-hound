@@ -1,22 +1,12 @@
 import Link from "next/link";
 import { ChevronRight, CalendarDays, Users, Inbox } from "lucide-react";
 import { getBriefs, getStatus, briefTotals, type BriefSummary } from "@/lib/api";
+import { formatWeek } from "@/lib/utils";
 import { Header } from "./components/Header";
 import { VerifiedBadge, StatChip } from "./components/ui";
 import { RunAnalysis } from "./components/RunAnalysis";
 
 export const dynamic = "force-dynamic";
-
-function formatWeek(weekOf: string) {
-  const [y, m, d] = weekOf.split("-").map(Number);
-  if (!y) return weekOf;
-  return new Date(Date.UTC(y, m - 1, d)).toLocaleDateString("en-US", {
-    year: "numeric",
-    month: "long",
-    day: "numeric",
-    timeZone: "UTC",
-  });
-}
 
 export default async function Home() {
   const [briefs, status] = await Promise.all([getBriefs(), getStatus()]);

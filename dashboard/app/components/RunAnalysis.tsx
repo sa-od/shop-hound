@@ -3,8 +3,7 @@
 import { useState, useRef, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { Play, Loader2, X, Plus } from "lucide-react";
-
-const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4111";
+import { API, isValidDomain } from "@/lib/utils";
 
 export function RunAnalysis({ lastCreatedAt }: { lastCreatedAt: string | null }) {
   const router = useRouter();
@@ -20,18 +19,21 @@ export function RunAnalysis({ lastCreatedAt }: { lastCreatedAt: string | null })
   };
 
   const run = useCallback(async () => {
-    const competitors = domains
+    const raw = domains
       .split(",")
       .map((d) => d.trim())
       .filter(Boolean);
-    if (competitors.length === 0) return;
+    if (raw.length === 0) return;
+
+    const invalid = raw.filter((d) => !isValidDomain(d));
+    if (invalid.length > 0) {
+      setNote(`Invalid domain${invalid.length > 1 ? "s" : ""}: ${invalid.join(", ")}. Use formats like example.com.`);
+      return;
+    }
 
     setPhase("running");
     setNote("Scraping catalogs & embedding… this takes ~2 minutes (longer for non-Shopify stores).");
 
-    // Capture the CURRENT newest brief as the baseline at run time — the
-    // server-rendered prop can be stale (e.g. back-to-back runs), which made
-    // completed runs appear to vanish until a manual refresh.
     let baseline = lastCreatedAt;
     try {
       const res = await fetch(`${API}/status`, { cache: "no-store" });
@@ -40,16 +42,24 @@ export function RunAnalysis({ lastCreatedAt }: { lastCreatedAt: string | null })
       /* fall back to the prop */
     }
 
-    // Fire the workflow. It runs long (~2 min) and the HTTP call will likely
-    // time out at the gateway — that's fine, the run continues server-side, so
-    // we don't block the UI on this promise.
-    fetch(`${API}/api/workflows/competitiveIntelWorkflow/start-async`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ inputData: { competitors } }),
-    }).catch(() => {});
+    try {
+      const res = await fetch(`${API}/api/workflows/competitiveIntelWorkflow/start-async`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ inputData: { competitors: raw } }),
+      });
+      if (!res.ok) {
+        const body = await res.text().catch(() => "");
+        setPhase("idle");
+        setNote(`Workflow rejected: ${body || res.statusText}. Check domain format and try again.`);
+        return;
+      }
+    } catch (err) {
+      setPhase("idle");
+      setNote(`Failed to start workflow: ${err instanceof Error ? err.message : err}`);
+      return;
+    }
 
-    // Poll /status until a brief newer than the last one we knew about appears.
     const started = Date.now();
     stopPolling();
     pollRef.current = setInterval(async () => {
