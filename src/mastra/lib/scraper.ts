@@ -9,7 +9,8 @@ import { firecrawlEnabled, extractCatalogWithFirecrawl } from './firecrawl';
  */
 
 const PAGE_LIMIT = 250;
-const MAX_PAGES = 10; // cap: up to 2500 products per competitor (~2–3 min embed)
+const MAX_PAGES = 5; // cap: up to 1250 products per competitor (~1 min embed)
+const PAGE_TIMEOUT_MS = 15_000; // 15s per page — total scrape ≤75s for 5 pages
 
 interface ShopifyProductsResponse {
   products: Array<{
@@ -39,7 +40,7 @@ export async function scrapeShopifyCatalog(domain: string): Promise<NormalizedPr
     const url = `https://${host}/products.json?limit=${PAGE_LIMIT}&page=${page}`;
     const res = await fetch(url, {
       headers: { 'User-Agent': 'Mozilla/5.0 (compatible; CompetitiveIntelBot/1.0)' },
-      signal: AbortSignal.timeout(20_000),
+      signal: AbortSignal.timeout(PAGE_TIMEOUT_MS),
     });
     if (!res.ok) {
       throw new Error(`GET ${url} → ${res.status}`);

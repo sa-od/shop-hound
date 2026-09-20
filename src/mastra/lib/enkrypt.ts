@@ -30,6 +30,7 @@ async function enkryptPost<T>(path: string, body: unknown, extraHeaders?: Record
     method: 'POST',
     headers: { apikey: apiKey()!, 'Content-Type': 'application/json', ...extraHeaders },
     body: JSON.stringify(body),
+    signal: AbortSignal.timeout(30_000),
   });
   if (!res.ok) {
     throw new Error(`Enkrypt ${path} failed: ${res.status} ${await res.text()}`);

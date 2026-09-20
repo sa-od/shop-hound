@@ -18,8 +18,8 @@ import { normalizedProductSchema, type NormalizedProduct } from './types';
  */
 
 const FIRECRAWL_BASE_URL = 'https://api.firecrawl.dev/v2';
-const POLL_INTERVAL_MS = 5_000;
-const POLL_TIMEOUT_MS = 5 * 60_000;
+const POLL_INTERVAL_MS = 3_000;
+const POLL_TIMEOUT_MS = 60_000; // 60s — if Firecrawl hasn't finished by then, fail fast
 const MAX_PRODUCTS = 2500; // same ceiling as the Shopify scraper
 // Page budget caps credit burn (json extraction costs credits per page).
 // Override with FIRECRAWL_PAGE_BUDGET for deeper coverage on paid plans.
