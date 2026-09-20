@@ -24,6 +24,12 @@ export const scrapeLiveTool = createTool({
   }),
   execute: async (inputData) => {
     const competitor = normalizeDomain(inputData.domain);
+    if (!competitor || competitor.length > 253 || !/^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)*\.[a-z]{2,12}$/.test(competitor)) {
+      throw new Error(`Invalid domain: "${inputData.domain}" — expected a store domain like "allbirds.com"`);
+    }
+    if (/^\d{1,3}(\.\d{1,3}){3}$/.test(competitor) || /^\[/.test(competitor)) {
+      throw new Error(`Invalid domain: "${inputData.domain}" — IP addresses and localhost are not supported`);
+    }
     const { products: all, source } = await scrapeCatalog(competitor);
     const filtered = inputData.query
       ? all.filter(p => p.title.toLowerCase().includes(inputData.query!.toLowerCase()))

@@ -11,7 +11,7 @@ export function formatWeek(weekOf: string) {
   });
 }
 
-const DOMAIN_RE = /^[a-z0-9]+([-.][a-z0-9]+)*\.[a-z]{2,}$/;
+const DOMAIN_RE = /^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)*\.[a-z]{2,12}$/;
 
 export function isValidDomain(raw: string): boolean {
   let d = raw.trim().toLowerCase();
@@ -20,5 +20,12 @@ export function isValidDomain(raw: string): boolean {
   if (["localhost", "localhost.localdomain", "example.test", "injection-demo.test"].includes(d)) return false;
   if (/^\d{1,3}(\.\d{1,3}){3}$/.test(d)) return false;
   if (/^\[/.test(d)) return false;
-  return DOMAIN_RE.test(d);
+  if (!DOMAIN_RE.test(d)) return false;
+  const labels = d.split(".");
+  if (labels.some(l => l.length === 0 || l.length > 63)) return false;
+  const tld = labels[labels.length - 1];
+  if (tld.length < 2 || tld.length > 12) return false;
+  const namePart = labels.slice(0, -1).join(".");
+  if (/^\d+$/.test(namePart.replace(/-/g, ""))) return false;
+  return true;
 }
