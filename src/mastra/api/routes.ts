@@ -60,14 +60,21 @@ export const apiRoutes = [
     handler: async c => {
       try {
         const mastra = c.get('mastra');
-        const [briefs, active] = await Promise.all([
-          listRecentBriefs(),
-          mastra
-            .getWorkflow('competitiveIntelWorkflow')
-            .listActiveWorkflowRuns()
-            .then(r => r.runs.length)
-            .catch(() => 0),
-        ]);
+        const briefs = await listRecentBriefs();
+        let active = 0;
+        try {
+          const runs = await Promise.race([
+            mastra
+              .getWorkflow('competitiveIntelWorkflow')
+              .listActiveWorkflowRuns(),
+            new Promise<never>((_, reject) =>
+              setTimeout(() => reject(new Error('timeout')), 5000),
+            ),
+          ]);
+          active = runs.runs.length;
+        } catch {
+          active = 0;
+        }
         const last = briefs[0] ?? null;
         return c.json({
           running: active > 0,
