@@ -1,4 +1,5 @@
 import { QdrantVector } from '@mastra/qdrant';
+import { Agent } from 'undici';
 import { embeddingDimension } from './embeddings';
 
 // Long-term memory (PRD §5.2): product vectors, brief archive, and durable
@@ -7,11 +8,19 @@ export const COMPETITOR_PRODUCTS = 'competitor_products';
 export const GROWTH_BRIEFS = 'growth_briefs';
 export const SNAPSHOT_RECORDS = 'snapshot_records';
 
+// Disable HTTP keepalive to prevent Mastra Platform from keeping the server
+// awake. The default Qdrant dispatcher uses keepAliveTimeout: 10000 which
+// sends outbound keepalive packets every 10s — that counts as traffic and
+// resets the idle timer. Setting connections: 0 + keepAliveTimeout: 0 means
+// no persistent connections are held between requests.
+const noKeepAliveAgent = new Agent({ connections: 0, keepAliveTimeout: 0 });
+
 export const qdrant = new QdrantVector({
   id: 'qdrant-vector',
   url: process.env.QDRANT_URL ?? 'http://localhost:6333',
   apiKey: process.env.QDRANT_API_KEY,
-});
+  dispatcher: noKeepAliveAgent,
+} as any);
 
 let ensured = false;
 
