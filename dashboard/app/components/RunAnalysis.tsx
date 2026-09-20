@@ -43,10 +43,10 @@ export function RunAnalysis({ lastCreatedAt }: { lastCreatedAt: string | null })
     }
 
     try {
-      const res = await fetch(`${API}/api/workflows/competitiveIntelWorkflow/start-async`, {
+      const res = await fetch(`${API}/run`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ inputData: { competitors: raw } }),
+        body: JSON.stringify({ competitors: raw }),
       });
       if (!res.ok) {
         const body = await res.text().catch(() => "");

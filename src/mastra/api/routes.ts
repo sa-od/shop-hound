@@ -1,5 +1,6 @@
 import { registerApiRoute } from '@mastra/core/server';
 import { listRecentBriefs, getBrief } from '../lib/briefs-store';
+import { normalizeDomain } from '../lib/scraper';
 
 /**
  * Hono API Gateway routes (PRD §10) served by the Mastra server itself.
@@ -10,6 +11,36 @@ import { listRecentBriefs, getBrief } from '../lib/briefs-store';
  * live at the server root: /briefs, /briefs/:id, /status.
  */
 export const apiRoutes = [
+  // POST /run — fire-and-forget workflow start (truly async, returns 202 immediately)
+  registerApiRoute('/run', {
+    method: 'POST',
+    openapi: {
+      summary: 'Start a competitive analysis run (fire-and-forget)',
+      tags: ['Dashboard'],
+    },
+    handler: async c => {
+      try {
+        const body = await c.req.json();
+        const raw: string[] = body?.competitors ?? [];
+        const competitors = raw.map(normalizeDomain).filter(Boolean);
+        if (competitors.length === 0) {
+          return c.json({ error: 'No valid competitors provided' }, 400);
+        }
+        const mastra = c.get('mastra');
+        const workflow = mastra.getWorkflow('competitiveIntelWorkflow');
+        const run = await workflow.createRun();
+        // Fire-and-forget: start the workflow in the background, return 202 immediately
+        run.start({ inputData: { competitors } }).catch((err: unknown) => {
+          console.error('[/run] workflow failed:', err);
+        });
+        return c.json({ accepted: true, competitors }, 202);
+      } catch (err) {
+        console.error('[/run] error:', err);
+        return c.json({ error: 'Failed to start run', code: 'INTERNAL' }, 500);
+      }
+    },
+  }),
+
   // GET /briefs — list all archived weekly briefs (newest first, no markdown)
   registerApiRoute('/briefs', {
     method: 'GET',
