@@ -46,6 +46,29 @@ export const apiRoutes = [
     },
   }),
 
+  // POST /test-run — synchronous workflow test (debug only, remove before demo)
+  registerApiRoute('/test-run', {
+    method: 'POST',
+    handler: async c => {
+      try {
+        const body = await c.req.json();
+        const raw: string[] = body?.competitors ?? [];
+        const competitors = raw.map(normalizeDomain).filter(Boolean);
+        if (competitors.length === 0) {
+          return c.json({ error: 'No valid competitors provided' }, 400);
+        }
+        const mastra = c.get('mastra');
+        const workflow = mastra.getWorkflow('competitiveIntelWorkflow');
+        const run = await workflow.createRun();
+        const result = await run.start({ inputData: { competitors } });
+        return c.json({ success: true, result: JSON.stringify(result).slice(0, 2000) });
+      } catch (err) {
+        console.error('[/test-run] error:', err);
+        return c.json({ error: String(err), stack: (err as Error)?.stack?.slice(0, 1000) }, 500);
+      }
+    },
+  }),
+
   // GET /briefs — list all archived weekly briefs (newest first, no markdown)
   registerApiRoute('/briefs', {
     method: 'GET',
