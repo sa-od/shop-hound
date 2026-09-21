@@ -2,6 +2,9 @@ import { registerApiRoute } from '@mastra/core/server';
 import { listRecentBriefs, getBrief } from '../lib/briefs-store';
 import { normalizeDomain } from '../lib/scraper';
 
+// Keep a reference to running workflows so they aren't GC'd
+const runningWorkflows = new Map<string, Promise<unknown>>();
+
 /**
  * Hono API Gateway routes (PRD §10) served by the Mastra server itself.
  * Read path for the Merchant Dashboard. CORS is open by default (ServerConfig
@@ -28,15 +31,14 @@ export const apiRoutes = [
         }
         const mastra = c.get('mastra');
         const workflow = mastra.getWorkflow('competitiveIntelWorkflow');
-        // Start workflow in background — don't await, return 202 immediately
-        workflow.createRun().then(run =>
-          run.start({ inputData: { competitors } }).catch((err: unknown) => {
-            console.error('[/run] workflow failed:', err);
-          }),
-        ).catch((err: unknown) => {
-          console.error('[/run] createRun failed:', err);
-        });
-        return c.json({ accepted: true, competitors }, 202);
+        const runId = `run-${Date.now()}`;
+        // Start workflow in background — store reference to prevent GC
+        const p = workflow.createRun()
+          .then(run => run.start({ inputData: { competitors } }))
+          .then(() => { console.log(`[/run] ${runId} completed`); runningWorkflows.delete(runId); })
+          .catch((err: unknown) => { console.error(`[/run] ${runId} failed:`, err); runningWorkflows.delete(runId); });
+        runningWorkflows.set(runId, p);
+        return c.json({ accepted: true, competitors, runId }, 202);
       } catch (err) {
         console.error('[/run] error:', err);
         return c.json({ error: 'Failed to start run', code: 'INTERNAL' }, 500);
