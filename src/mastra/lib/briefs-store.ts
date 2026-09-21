@@ -1,5 +1,4 @@
 import { QdrantClient } from '@qdrant/js-client-rest';
-import { Agent } from 'undici';
 import { GROWTH_BRIEFS } from './qdrant';
 
 /**
@@ -8,15 +7,12 @@ import { GROWTH_BRIEFS } from './qdrant';
  * because the @mastra/qdrant `QdrantVector` wrapper exposes no scroll/list API.
  */
 
-const noKeepAliveAgent = new Agent({ connections: 0, keepAliveTimeout: 0 });
-
 let _client: QdrantClient | null = null;
 function client(): QdrantClient {
   _client ??= new QdrantClient({
     url: process.env.QDRANT_URL ?? 'http://localhost:6333',
     apiKey: process.env.QDRANT_API_KEY,
-    dispatcher: noKeepAliveAgent,
-  } as any);
+  });
   return _client;
 }
 
