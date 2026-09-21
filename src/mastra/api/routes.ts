@@ -3,9 +3,6 @@ import { listRecentBriefs, getBrief } from '../lib/briefs-store';
 import { normalizeDomain } from '../lib/scraper';
 import { mastra } from '../index';
 
-// Keep a reference to running workflows so they aren't GC'd
-const runningWorkflows = new Map<string, Promise<unknown>>();
-
 /**
  * Hono API Gateway routes (PRD §10) served by the Mastra server itself.
  * Read path for the Merchant Dashboard. CORS is open by default (ServerConfig
@@ -32,12 +29,17 @@ export const apiRoutes = [
         }
         const workflow = mastra.getWorkflow('competitiveIntelWorkflow');
         const runId = `run-${Date.now()}`;
-        // Start workflow in background — store reference to prevent GC
-        const p = workflow.createRun()
-          .then(run => run.start({ inputData: { competitors } }))
-          .then(() => { console.log(`[/run] ${runId} completed`); runningWorkflows.delete(runId); })
-          .catch((err: unknown) => { console.error(`[/run] ${runId} failed:`, err); runningWorkflows.delete(runId); });
-        runningWorkflows.set(runId, p);
+        // Start workflow in background — async IIFE to prevent GC
+        (async () => {
+          try {
+            const run = await workflow.createRun();
+            console.log(`[/run] ${runId} starting workflow...`);
+            await run.start({ inputData: { competitors } });
+            console.log(`[/run] ${runId} completed`);
+          } catch (err) {
+            console.error(`[/run] ${runId} failed:`, err);
+          }
+        })();
         return c.json({ accepted: true, competitors, runId }, 202);
       } catch (err) {
         console.error('[/run] error:', err);
