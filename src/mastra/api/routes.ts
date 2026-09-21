@@ -27,17 +27,15 @@ export const apiRoutes = [
           return c.json({ error: 'No valid competitors provided' }, 400);
         }
         const mastra = c.get('mastra');
-        // Defer workflow start to next tick so the HTTP response is sent immediately
-        setTimeout(() => {
-          const workflow = mastra.getWorkflow('competitiveIntelWorkflow');
-          workflow.createRun().then(run =>
-            run.start({ inputData: { competitors } }).catch((err: unknown) => {
-              console.error('[/run] workflow failed:', err);
-            }),
-          ).catch((err: unknown) => {
-            console.error('[/run] createRun failed:', err);
-          });
-        }, 0);
+        const workflow = mastra.getWorkflow('competitiveIntelWorkflow');
+        // Start workflow in background — don't await, return 202 immediately
+        workflow.createRun().then(run =>
+          run.start({ inputData: { competitors } }).catch((err: unknown) => {
+            console.error('[/run] workflow failed:', err);
+          }),
+        ).catch((err: unknown) => {
+          console.error('[/run] createRun failed:', err);
+        });
         return c.json({ accepted: true, competitors }, 202);
       } catch (err) {
         console.error('[/run] error:', err);
