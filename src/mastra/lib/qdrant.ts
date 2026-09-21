@@ -11,7 +11,8 @@ export const qdrant = new QdrantVector({
   id: 'qdrant-vector',
   url: process.env.QDRANT_URL ?? 'http://localhost:6333',
   apiKey: process.env.QDRANT_API_KEY,
-});
+  checkCompatibility: false,
+} as any);
 
 let ensured = false;
 
@@ -30,12 +31,17 @@ export async function upsertBatched(args: {
     let lastErr: unknown;
     for (let attempt = 1; attempt <= 3; attempt++) {
       try {
-        await qdrant.upsert({ indexName: args.indexName, vectors, metadata });
+        await Promise.race([
+          qdrant.upsert({ indexName: args.indexName, vectors, metadata }),
+          new Promise<never>((_, reject) =>
+            setTimeout(() => reject(new Error('upsert timeout')), 30_000),
+          ),
+        ]);
         lastErr = undefined;
         break;
       } catch (err) {
         lastErr = err;
-        await new Promise(r => setTimeout(r, attempt * 2000));
+        if (attempt < 3) await new Promise(r => setTimeout(r, attempt * 2000));
       }
     }
     if (lastErr) throw lastErr;
