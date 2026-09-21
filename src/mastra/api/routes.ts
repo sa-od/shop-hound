@@ -1,6 +1,7 @@
 import { registerApiRoute } from '@mastra/core/server';
 import { listRecentBriefs, getBrief } from '../lib/briefs-store';
 import { normalizeDomain } from '../lib/scraper';
+import { mastra } from '../index';
 
 // Keep a reference to running workflows so they aren't GC'd
 const runningWorkflows = new Map<string, Promise<unknown>>();
@@ -29,7 +30,6 @@ export const apiRoutes = [
         if (competitors.length === 0) {
           return c.json({ error: 'No valid competitors provided' }, 400);
         }
-        const mastra = c.get('mastra');
         const workflow = mastra.getWorkflow('competitiveIntelWorkflow');
         const runId = `run-${Date.now()}`;
         // Start workflow in background — store reference to prevent GC
@@ -57,7 +57,6 @@ export const apiRoutes = [
         if (competitors.length === 0) {
           return c.json({ error: 'No valid competitors provided' }, 400);
         }
-        const mastra = c.get('mastra');
         const workflow = mastra.getWorkflow('competitiveIntelWorkflow');
         const run = await workflow.createRun();
         const result = await run.start({ inputData: { competitors } });
@@ -118,7 +117,6 @@ export const apiRoutes = [
     },
     handler: async c => {
       try {
-        const mastra = c.get('mastra');
         const briefs = await listRecentBriefs();
         let active = 0;
         try {
