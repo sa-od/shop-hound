@@ -47,7 +47,18 @@ export async function upsertBatched(args: {
 /** Idempotently create both collections + the payload indexes we filter on. */
 export async function ensureCollections(): Promise<void> {
   if (ensured) return;
-  const existing = await qdrant.listIndexes();
+  let existing: string[];
+  try {
+    existing = await Promise.race([
+      qdrant.listIndexes(),
+      new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error('Qdrant listIndexes timeout')), 15_000),
+      ),
+    ]);
+  } catch (err) {
+    console.warn('[qdrant] ensureCollections skipped — listIndexes failed:', String(err).slice(0, 200));
+    return; // collections likely already exist from previous deploys
+  }
   const dimension = await embeddingDimension();
 
   for (const indexName of [COMPETITOR_PRODUCTS, GROWTH_BRIEFS, SNAPSHOT_RECORDS]) {
