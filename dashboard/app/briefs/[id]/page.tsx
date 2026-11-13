@@ -1,7 +1,8 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ArrowLeft, ShieldCheck, ShieldAlert, FileCheck2, Fingerprint } from "lucide-react";
-import { getBrief, briefTotals } from "@/lib/api";
+import { briefTotals, type BriefDetail } from "@/lib/api";
+import { getBrief } from "@/lib/server/briefs-store";
 import { formatWeek } from "@/lib/utils";
 import { VerifiedBadge, StatChip, CompetitorChip } from "@/app/components/ui";
 import dynamicImport from "next/dynamic";
@@ -57,8 +58,8 @@ export default async function BriefPage({ params }: { params: Promise<{ id: stri
   );
 }
 
-function AuditPanel({ brief }: { brief: Awaited<ReturnType<typeof getBrief>> }) {
-  if (!brief) return null;
+function AuditPanel({ brief }: { brief: BriefDetail }) {
+  const warnings = brief.safety.warnings ?? [];
   return (
     <section className="mt-6 rounded-xl border border-zinc-800 bg-zinc-900/40 p-4">
       <div className="mb-3 flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-zinc-500">
@@ -78,6 +79,16 @@ function AuditPanel({ brief }: { brief: Awaited<ReturnType<typeof getBrief>> }) 
           detail={brief.safety.violations.length ? brief.safety.violations[0] : "No bias / policy violations"}
         />
       </div>
+      {warnings.length > 0 && (
+        <div className="mt-3 rounded-lg border border-zinc-700/60 bg-zinc-900/60 p-3">
+          <p className="text-xs font-medium text-zinc-300">Advisory (does not affect verification)</p>
+          <ul className="mt-1.5 space-y-1">
+            {warnings.map((w) => (
+              <li key={w} className="text-[11px] text-zinc-500">{w}</li>
+            ))}
+          </ul>
+        </div>
+      )}
       {brief.safety.method && (
         <p className="mt-3 border-t border-zinc-800 pt-3 text-[11px] text-zinc-600">Method: {brief.safety.method}</p>
       )}

@@ -1,6 +1,8 @@
 import Link from "next/link";
 import { ChevronRight, CalendarDays, Users, Inbox } from "lucide-react";
-import { getBriefs, getStatus, briefTotals, type BriefSummary } from "@/lib/api";
+import { briefTotals, type BriefSummary } from "@/lib/api";
+import { listRecentBriefs } from "@/lib/server/briefs-store";
+import { getStatus } from "@/lib/server/status";
 import { formatWeek } from "@/lib/utils";
 import { Header } from "./components/Header";
 import { VerifiedBadge, StatChip } from "./components/ui";
@@ -9,7 +11,7 @@ import { RunAnalysis } from "./components/RunAnalysis";
 export const dynamic = "force-dynamic";
 
 export default async function Home() {
-  const [briefs, status] = await Promise.all([getBriefs(), getStatus()]);
+  const [briefs, status] = await Promise.all([listRecentBriefs(), getStatus()]);
 
   return (
     <>
@@ -25,7 +27,7 @@ export default async function Home() {
         </div>
 
         <div className="mb-6">
-          <RunAnalysis lastCreatedAt={status.lastBrief?.createdAt ?? null} />
+          <RunAnalysis />
         </div>
 
         {briefs.length === 0 ? (
@@ -33,13 +35,13 @@ export default async function Home() {
         ) : (
           <ul className="space-y-4">
             {briefs.map((b) => (
-              <BriefCard key={`${b.weekOf}-${b.briefId}`} brief={b} />
+              <BriefCard key={b.id} brief={b} />
             ))}
           </ul>
         )}
       </main>
       <footer className="border-t border-zinc-800/80 px-5 py-6 text-center text-xs text-zinc-600">
-        Mastra · Enkrypt AI · Qdrant · OpenAI
+        Enkrypt AI · MongoDB Atlas · OpenAI · Vercel
       </footer>
     </>
   );
@@ -51,7 +53,7 @@ function BriefCard({ brief }: { brief: BriefSummary }) {
   return (
     <li>
       <Link
-        href={`/briefs/${Date.parse(brief.createdAt)}`}
+        href={`/briefs/${brief.id}`}
         className="group block rounded-xl border border-zinc-800 bg-zinc-900/50 p-5 transition hover:border-zinc-700 hover:bg-zinc-900"
       >
         <div className="flex items-start justify-between gap-4">
@@ -100,7 +102,7 @@ function EmptyState() {
     <div className="rounded-xl border border-dashed border-zinc-800 bg-zinc-900/30 px-6 py-16 text-center">
       <Inbox size={28} className="mx-auto text-zinc-600" />
       <p className="mt-3 text-sm text-zinc-400">No briefs yet.</p>
-      <p className="mt-1 text-xs text-zinc-600">Run the competitive-intel workflow to generate this week&apos;s brief.</p>
+      <p className="mt-1 text-xs text-zinc-600">Start a new analysis above to generate this week&apos;s brief.</p>
     </div>
   );
 }

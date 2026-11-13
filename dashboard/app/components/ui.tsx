@@ -45,9 +45,14 @@ export function CompetitorChip({ c }: { c: CompetitorSummary }) {
   const s = map[c.status] ?? { label: c.status, cls: "border-zinc-700 bg-zinc-800 text-zinc-300" };
   return (
     <div className="flex items-center justify-between gap-3 rounded-lg border border-zinc-800 bg-zinc-900/60 px-3 py-2">
-      <div className="flex items-center gap-2 min-w-0">
-        <CircleDot size={14} className="shrink-0 text-zinc-500" />
-        <span className="truncate font-mono text-sm text-zinc-200">{c.competitor}</span>
+      <div className="min-w-0">
+        <div className="flex items-center gap-2 min-w-0">
+          <CircleDot size={14} className="shrink-0 text-zinc-500" />
+          <span className="truncate font-mono text-sm text-zinc-200">{c.competitor}</span>
+        </div>
+        {c.status === "unverified" && c.reason && (
+          <p className="mt-0.5 truncate pl-[22px] text-[11px] text-zinc-500" title={c.reason}>{c.reason}</p>
+        )}
       </div>
       <div className="flex items-center gap-2 shrink-0">
         {c.source === "firecrawl" && (

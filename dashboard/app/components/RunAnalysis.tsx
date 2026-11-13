@@ -1,22 +1,64 @@
 "use client";
 
-import { useState, useRef, useCallback } from "react";
+import { useState, useRef, useCallback, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { Play, Loader2, X, Plus } from "lucide-react";
-import { API, isValidDomain } from "@/lib/utils";
+import { isValidDomain } from "@/lib/utils";
+import type { Status } from "@/lib/api";
 
-export function RunAnalysis({ lastCreatedAt }: { lastCreatedAt: string | null }) {
+const POLL_MS = 5_000;
+// The run itself is capped at 300s by the platform; past this, stop waiting.
+const GIVE_UP_MS = 7 * 60 * 1000;
+
+export function RunAnalysis() {
   const router = useRouter();
   const [open, setOpen] = useState(false);
-  const [domains, setDomains] = useState("voyageeyewear.com");
+  const [domains, setDomains] = useState("goodr.com, magicspoon.com, deathwishcoffee.com");
   const [phase, setPhase] = useState<"idle" | "running">("idle");
-  const [note, setNote] = useState<string | null>(null);
+  const [note, setNote] = useState<{ text: string; tone: "info" | "error" } | null>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const stopPolling = () => {
     if (pollRef.current) clearInterval(pollRef.current);
     pollRef.current = null;
   };
+  useEffect(() => stopPolling, []);
+
+  /** Follow one run by id until it finishes, then show its outcome. */
+  const follow = useCallback(
+    (runId: string) => {
+      const started = Date.now();
+      stopPolling();
+      pollRef.current = setInterval(async () => {
+        try {
+          const res = await fetch("/api/status", { cache: "no-store" });
+          if (!res.ok) return;
+          const s: Status = await res.json();
+          if (s.activeRun?.runId === runId) return; // still going
+          if (s.lastRun?.runId === runId) {
+            stopPolling();
+            setPhase("idle");
+            if (s.lastRun.status === "failed") {
+              setNote({ text: `Run failed: ${s.lastRun.error ?? "unknown error"}`, tone: "error" });
+            } else {
+              setNote(null);
+              setOpen(false);
+            }
+            router.refresh(); // the brief (or the failure state) is now on the server
+            return;
+          }
+        } catch {
+          /* transient — keep polling */
+        }
+        if (Date.now() - started > GIVE_UP_MS) {
+          stopPolling();
+          setPhase("idle");
+          setNote({ text: "Lost track of the run — refresh in a moment to see the result.", tone: "info" });
+        }
+      }, POLL_MS);
+    },
+    [router],
+  );
 
   const run = useCallback(async () => {
     const raw = domains
@@ -25,64 +67,32 @@ export function RunAnalysis({ lastCreatedAt }: { lastCreatedAt: string | null })
       .filter(Boolean);
     if (raw.length === 0) return;
 
-    const invalid = raw.filter((d) => !isValidDomain(d));
+    const invalid = raw.filter((d) => d !== "injection-demo.test" && !isValidDomain(d));
     if (invalid.length > 0) {
-      setNote(`Invalid domain${invalid.length > 1 ? "s" : ""}: ${invalid.join(", ")}. Use formats like example.com.`);
+      setNote({ text: `Invalid domain${invalid.length > 1 ? "s" : ""}: ${invalid.join(", ")}. Use formats like example.com.`, tone: "error" });
       return;
     }
 
     setPhase("running");
-    setNote("Scraping catalogs & embedding… this takes ~2 minutes (longer for non-Shopify stores).");
-
-    let baseline = lastCreatedAt;
+    setNote({ text: "Scraping catalogs, comparing, writing and auditing the brief… usually 1–2 minutes.", tone: "info" });
     try {
-      const res = await fetch(`${API}/status`, { cache: "no-store" });
-      if (res.ok) baseline = (await res.json())?.lastBrief?.createdAt ?? baseline;
-    } catch {
-      /* fall back to the prop */
-    }
-
-    try {
-      const res = await fetch(`${API}/run`, {
+      const res = await fetch("/api/run", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ competitors: raw }),
       });
-      if (!res.ok) {
-        const body = await res.text().catch(() => "");
+      const body = (await res.json().catch(() => ({}))) as { runId?: string; error?: string };
+      if (!res.ok || !body.runId) {
         setPhase("idle");
-        setNote(`Workflow rejected: ${body || res.statusText}. Check domain format and try again.`);
+        setNote({ text: body.error ?? `Could not start the run (HTTP ${res.status}).`, tone: "error" });
         return;
       }
+      follow(body.runId);
     } catch (err) {
       setPhase("idle");
-      setNote(`Failed to start workflow: ${err instanceof Error ? err.message : err}`);
-      return;
+      setNote({ text: `Could not start the run: ${err instanceof Error ? err.message : err}`, tone: "error" });
     }
-
-    const started = Date.now();
-    stopPolling();
-    pollRef.current = setInterval(async () => {
-      try {
-        const res = await fetch(`${API}/status`, { cache: "no-store" });
-        const s = await res.json();
-        const newest: string | null = s?.lastBrief?.createdAt ?? null;
-        if (newest && newest !== baseline) {
-          stopPolling();
-          setPhase("idle");
-          setOpen(false);
-          setNote(null);
-          router.refresh(); // pull the new brief into the list
-        } else if (Date.now() - started > 10 * 60 * 1000) {
-          stopPolling();
-          setPhase("idle");
-          setNote("Still running — refresh in a moment to see the result.");
-        }
-      } catch {
-        /* transient — keep polling */
-      }
-    }, 5000);
-  }, [domains, lastCreatedAt, router]);
+  }, [domains, follow]);
 
   if (!open) {
     return (
@@ -100,18 +110,21 @@ export function RunAnalysis({ lastCreatedAt }: { lastCreatedAt: string | null })
       <div className="mb-2 flex items-center justify-between">
         <span className="text-sm font-medium text-zinc-200">Run a competitive analysis</span>
         {phase === "idle" && (
-          <button onClick={() => setOpen(false)} className="text-zinc-500 hover:text-zinc-300">
+          <button onClick={() => setOpen(false)} className="text-zinc-500 hover:text-zinc-300" aria-label="Close">
             <X size={16} />
           </button>
         )}
       </div>
-      <label className="text-xs text-zinc-500">Competitor store domains (comma-separated)</label>
+      <label htmlFor="competitor-domains" className="text-xs text-zinc-500">
+        Competitor store domains (comma-separated, up to 6)
+      </label>
       <div className="mt-1.5 flex flex-col gap-2 sm:flex-row">
         <input
+          id="competitor-domains"
           value={domains}
           onChange={(e) => setDomains(e.target.value)}
           disabled={phase === "running"}
-          placeholder="voyageeyewear.com, another-store.com"
+          placeholder="goodr.com, another-store.com"
           className="flex-1 rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 font-mono text-sm text-zinc-100 outline-none focus:border-emerald-500/50 disabled:opacity-60"
         />
         <button
@@ -123,10 +136,11 @@ export function RunAnalysis({ lastCreatedAt }: { lastCreatedAt: string | null })
           {phase === "running" ? "Running…" : "Run"}
         </button>
       </div>
-      {note && <p className="mt-2 text-xs text-zinc-400">{note}</p>}
+      {note && <p className={`mt-2 text-xs ${note.tone === "error" ? "text-red-300" : "text-zinc-400"}`}>{note.text}</p>}
       <p className="mt-2 text-[11px] text-zinc-600">
         Shopify stores scrape instantly via /products.json. Non-Shopify stores fall back to Firecrawl AI
-        extraction — slower (a few minutes) and best-effort on large catalogs. Demo:{" "}
+        extraction — slower and best-effort; a store that can&apos;t be read within the run&apos;s time budget is
+        marked unverified rather than guessed at. Demo:{" "}
         <button
           type="button"
           onClick={() => setDomains("injection-demo.test")}

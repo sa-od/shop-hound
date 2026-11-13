@@ -1,5 +1,3 @@
-export const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4111";
-
 export function formatWeek(weekOf: string) {
   const [y, m, d] = weekOf.split("-").map(Number);
   if (!y) return weekOf;
