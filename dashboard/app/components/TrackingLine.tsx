@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { CalendarClock, Loader2 } from "lucide-react";
-import { startRun } from "@/lib/run-client";
+import { addStore } from "@/lib/run-client";
 
 export interface Tracking {
   tracked: boolean;
@@ -15,11 +15,12 @@ function day(iso: string) {
 }
 
 /**
- * When this store set is checked again. The daily job picks up sets whose last
+ * When this store is checked again. The daily job picks up stores whose last
  * brief is 7+ days old, and a busy day can push one to the next, so the next
- * check is "on or after" a date, never a time.
+ * check is "on or after" a date, never a time. `unreadable`: no store in the
+ * brief could be read, which is why it was never tracked.
  */
-export function TrackingLine({ tracking, competitors }: { tracking: Tracking; competitors: string[] }) {
+export function TrackingLine({ tracking, competitors, unreadable }: { tracking: Tracking; competitors: string[]; unreadable: boolean }) {
   const [pending, setPending] = useState(false);
   const [note, setNote] = useState<string | null>(null);
 
@@ -29,9 +30,16 @@ export function TrackingLine({ tracking, competitors }: { tracking: Tracking; co
   async function runAgain() {
     setPending(true);
     setNote(null);
-    const r = await startRun(competitors);
+    // One store per analysis: older briefs with several stores add each one to the queue.
+    const results = [];
+    for (const c of competitors) results.push(await addStore(c));
     setPending(false);
-    setNote(r.ok ? "Started. The new brief appears here when it’s ready." : r.error);
+    const failed = results.find((r) => !r.ok);
+    setNote(
+      failed && !failed.ok
+        ? failed.error
+        : "Added to the queue. The new brief appears in Briefs when it’s ready.",
+    );
   }
 
   let text: React.ReactNode;
@@ -46,9 +54,10 @@ export function TrackingLine({ tracking, competitors }: { tracking: Tracking; co
   } else if (tracking.trackedUntil) {
     text = <>Tracking ended {day(tracking.trackedUntil)}.</>;
     canRunAgain = true;
+  } else if (unreadable) {
+    text = <>Not re-checked: we couldn’t read {competitors.length === 1 ? "this store" : "these stores"}.</>;
   } else {
-    text = <>These stores aren’t re-checked automatically.</>;
-    canRunAgain = true;
+    return null;
   }
 
   return (
@@ -67,7 +76,7 @@ export function TrackingLine({ tracking, competitors }: { tracking: Tracking; co
                 className="inline-flex items-center gap-1 font-semibold text-ink underline underline-offset-2 hover:no-underline disabled:cursor-not-allowed disabled:opacity-60"
               >
                 {pending && <Loader2 size={12} className="animate-spin" />}
-                {tracking.trackedUntil ? "Run again to resume" : "Run again to track them for 28 days"}
+                Run again to resume
               </button>
             </>
           )}

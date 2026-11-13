@@ -299,7 +299,7 @@
       {
         "name": "drop-panel",
         "value": "0 8px 20px rgb(17 17 17 / 0.08)",
-        "purpose": "The inline New analysis panel under the sticky top bar."
+        "purpose": "The inline Add store panel under the sticky top bar."
       }
     ],
     "motion": [
@@ -352,22 +352,22 @@
       "kind": "button",
       "refersTo": "button-primary",
       "description": "Carbon action button, used to submit an analysis.",
-      "html": "<button class=\"ds-btn-primary\"><svg width=\"15\" height=\"15\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><polygon points=\"6 3 20 12 6 21 6 3\"/></svg>Analyse</button>",
+      "html": "<button class=\"ds-btn-primary\"><svg width=\"15\" height=\"15\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M5 12h14M12 5v14\"/></svg>Add store</button>",
       "css": ":host{--color-ink:#111111;--color-ink-2:#464a52;--color-ink-3:#62666f;--color-shelf:#f4f5f7;--color-stock:#ffffff;--color-edge:#dadde2;--color-rail:#d9dce0;--color-sticker:#ffd60a;--color-cut:#d11b23;--color-ok:#1d6f40;--color-ok-soft:#e4f3ea;--color-warn:#8a5100;--color-warn-soft:#fff3d1;--color-info:#23479e;--color-info-soft:#e7edfb;}.ds-btn-primary{display:inline-flex;align-items:center;gap:6px;height:40px;padding:0 16px;border:0;border-radius:6px;background:var(--color-ink);color:#fff;font-family:'Barlow',ui-sans-serif,system-ui,sans-serif;font-variant-numeric:tabular-nums;font-size:14px;font-weight:600;cursor:pointer;transition:background-color 150ms;}.ds-btn-primary:hover{background:#2a2c30;}.ds-btn-primary:focus-visible{outline:2px solid var(--color-ink);outline-offset:2px;}.ds-btn-primary:disabled{background:#9a9da4;cursor:not-allowed;}"
     },
     {
       "name": "Top Bar",
       "kind": "nav",
       "refersTo": "top-bar",
-      "description": "Sticky carbon bar: wordmark, two tabs with a yellow active underline, run status and the New analysis button.",
-      "html": "<header class=\"ds-bar\"><span class=\"ds-bar-brand\">Growth Briefs</span><nav class=\"ds-bar-nav\"><a href=\"#\" class=\"ds-tab ds-tab-active\" aria-current=\"page\">This week</a><a href=\"#\" class=\"ds-tab\">Briefs</a></nav><span class=\"ds-bar-right\"><span class=\"ds-bar-status\">Last brief Nov 13</span><button class=\"ds-btn-bar\"><svg width=\"14\" height=\"14\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\"><path d=\"M5 12h14M12 5v14\"/></svg>New analysis</button></span></header>",
+      "description": "Sticky carbon bar: wordmark, two tabs with a yellow active underline, run status and the Add store button.",
+      "html": "<header class=\"ds-bar\"><span class=\"ds-bar-brand\">Growth Briefs</span><nav class=\"ds-bar-nav\"><a href=\"#\" class=\"ds-tab ds-tab-active\" aria-current=\"page\">This week</a><a href=\"#\" class=\"ds-tab\">Briefs</a></nav><span class=\"ds-bar-right\"><span class=\"ds-bar-status\">Last brief Nov 13</span><button class=\"ds-btn-bar\"><svg width=\"14\" height=\"14\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\"><path d=\"M5 12h14M12 5v14\"/></svg>Add store</button></span></header>",
       "css": ":host{--color-ink:#111111;--color-ink-2:#464a52;--color-ink-3:#62666f;--color-shelf:#f4f5f7;--color-stock:#ffffff;--color-edge:#dadde2;--color-rail:#d9dce0;--color-sticker:#ffd60a;--color-cut:#d11b23;--color-ok:#1d6f40;--color-ok-soft:#e4f3ea;--color-warn:#8a5100;--color-warn-soft:#fff3d1;--color-info:#23479e;--color-info-soft:#e7edfb;}.ds-bar{display:flex;align-items:center;gap:40px;height:56px;padding:0 32px;background:var(--color-ink);color:#fff;font-family:'Barlow',ui-sans-serif,system-ui,sans-serif;font-variant-numeric:tabular-nums;}.ds-bar-brand{font-family:'Barlow Condensed','Barlow',ui-sans-serif,sans-serif;font-weight:800;font-size:22px;line-height:1;letter-spacing:-0.025em;}.ds-bar-nav{display:flex;align-self:stretch;}.ds-tab{display:flex;align-items:center;padding:3px 14px 0;border-bottom:3px solid transparent;color:#a8abb2;font-size:14px;text-decoration:none;transition:color 150ms;}.ds-tab:hover{color:#fff;}.ds-tab-active{border-bottom-color:var(--color-sticker);color:#fff;font-weight:600;}.ds-tab:focus-visible{outline:2px solid #fff;outline-offset:-4px;}.ds-bar-right{margin-left:auto;display:flex;align-items:center;gap:12px;}.ds-bar-status{font-size:13px;color:#a8abb2;}.ds-btn-bar{display:inline-flex;align-items:center;gap:6px;padding:6px 12px;border:0;border-radius:6px;background:#fff;color:var(--color-ink);font-family:'Barlow',ui-sans-serif,system-ui,sans-serif;font-variant-numeric:tabular-nums;font-size:13px;font-weight:600;cursor:pointer;transition:background-color 150ms;}.ds-btn-bar:hover{background:var(--color-sticker);}.ds-btn-bar:focus-visible{outline:2px solid #fff;outline-offset:2px;}"
     },
     {
       "name": "Domain Input",
       "kind": "input",
       "refersTo": "input-text",
-      "description": "Text field for competitor domains, with help line that turns red on error.",
+      "description": "Text field for one store website, with help line that turns red on error.",
       "html": "<label class=\"ds-field\"><span class=\"ds-field-label\">Competitor stores to analyse</span><input class=\"ds-input\" placeholder=\"store-one.com, store-two.com\"><span class=\"ds-field-help\">Up to 6 stores, separated by commas.</span></label>",
       "css": ":host{--color-ink:#111111;--color-ink-2:#464a52;--color-ink-3:#62666f;--color-shelf:#f4f5f7;--color-stock:#ffffff;--color-edge:#dadde2;--color-rail:#d9dce0;--color-sticker:#ffd60a;--color-cut:#d11b23;--color-ok:#1d6f40;--color-ok-soft:#e4f3ea;--color-warn:#8a5100;--color-warn-soft:#fff3d1;--color-info:#23479e;--color-info-soft:#e7edfb;}.ds-field{display:flex;flex-direction:column;gap:8px;max-width:420px;font-family:'Barlow',ui-sans-serif,system-ui,sans-serif;font-variant-numeric:tabular-nums;color:var(--color-ink);}.ds-field-label{font-size:14px;font-weight:600;}.ds-input{height:40px;padding:0 12px;border:1px solid #c4c8cf;border-radius:6px;background:var(--color-stock);color:var(--color-ink);font:inherit;font-size:14px;outline:none;transition:border-color 150ms;}.ds-input::placeholder{color:var(--color-ink-3);}.ds-input:hover{border-color:var(--color-ink-3);}.ds-input:focus{border-color:var(--color-ink);}.ds-input:focus-visible{outline:2px solid var(--color-ink);outline-offset:2px;}.ds-input[aria-invalid]{border-color:var(--color-cut);}.ds-field-help{font-size:13px;color:var(--color-ink-3);}"
     },

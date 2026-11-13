@@ -10,14 +10,14 @@ related_targets: []
 Mode: Operate. Confirmed via `shape` on 2026-11-13.
 
 ## Audience and job
-Merchants, marketers and managers who analyse sets of up to 6 competitor stores and get a follow-up brief about weekly. Job: what did competitors change, and what should I do?
+Merchants, marketers and managers who add competitor stores one at a time and get a follow-up brief per store about weekly. Job: what did competitors change, and what should I do?
 
 ## Structure
-Top bar: This week · Briefs, plus run status and New analysis (an inline panel: up to 6 domains → POST /api/run).
+Top bar: This week · Briefs, plus queue status and Add store (an inline panel: one "Store website" field → POST /api/run { store }; each add joins a queue, the list of queued/analysing/finished stores sits under the field).
 - **This week (home):** executive summary + 2–4 recommendations from the latest brief → sortable Movements table (one row per competitor: price changes with biggest drop %, new, removed, renamed, status; row opens that competitor) → compact trust badge ("Verified · 9 of 10 stores", opens audit) + run status.
 - **Brief detail:** summary → recommendations → per-competitor sections with AI text next to product tables (price changes by % change, new products with "sits next to X" closest match, removed, renamed; rows link to the store). Audit trail collapsed at the end or in a side panel.
 - **Briefs (archive):** compact rows: week, store count, totals, status.
-- **Automatic tracking (2026-11-13, replaces the watchlist):** every store set analysed from the dashboard is tracked for 28 days after it was last run; running it again restarts the 28 days. A daily job (09:00 UTC) re-checks sets whose last brief is 7+ days old, so each set gets a new brief about weekly. The brief page says "Re-checked automatically every week until {date}. Next check on or after {date}" (approximate: a busy day can push it a day), or "Tracking ended {date}. Run again to resume". Never say "daily" about a brief. No watchlist-style page.
+- **Automatic tracking (2026-11-13, replaces the watchlist):** every store analysed from the dashboard is tracked for 28 days after it was last run; running it again restarts the 28 days. A daily job (09:00 UTC) re-checks stores whose last brief is 7+ days old, so each store gets a new brief about weekly. The brief page says "Re-checked automatically every week until {date}. Next check on or after {date}" (approximate: a busy day can push it a day), or "Tracking ended {date}. Run again to resume". Never say "daily" about a brief. No watchlist-style page.
 
 ## Boundaries
 - Remove the tech-stack footer and the injection-demo helper from the merchant UI.
@@ -25,14 +25,14 @@ Top bar: This week · Briefs, plus run status and New analysis (an inline panel:
 - Trust layer stays visible but secondary; never AI prose without its numbers; tables over decorative cards.
 
 ## States
-First use (no briefs → New analysis form inline); baseline week (first_snapshot, not "0 changes"); run in progress (elapsed vs ~2 min estimate, longer for Firecrawl); partial failure (show unverifiedReasons); audit failed (brief shown with warning); quiet week ("No changes from N stores"); product tables 0 to hundreds of rows (top items first + "Show all N", sorted by size of change).
+First use (no briefs → Add store form inline); baseline week (first_snapshot, not "0 changes"); run in progress (elapsed vs ~2 min estimate, longer for Firecrawl); partial failure (show unverifiedReasons); audit failed (brief shown with warning); quiet week ("No changes from N stores"); product tables 0 to hundreds of rows (top items first + "Show all N", sorted by size of change).
 
 ## Backend work needed
 - Brief API returns the archived `diff` (product rows, removed SKUs, unverifiedReasons).
 - Tracking lives in the backend (`lib/server/tracking.ts`: `trackingFor`, `listTrackedSets`; daily cron at `/api/cron/daily`). The UI only reads it.
 
 ## Decisions
-- Run cap stays at 6 stores per run (`/api/run`).
+- One store per analysis, queued (2026-11-13; replaces the 6-store run). Queue holds at most 10 waiting stores (429 queue_full). Server errors are shown as-is under the field.
 - Single shared workspace, no login (assumed).
 - Visual direction: open; to be chosen in new-work. Dark theme is not a binding commitment.
 
@@ -46,7 +46,7 @@ OWN-WORLD: Supermarket shelf edge. Ground #F4F5F7 (shelf grey-white); white card
 
 STORY: The merchant reads what changed (summary + price tickets), what to do (numbered actions), and who moved (Movements table), then opens a competitor or the full brief for product-level proof. Trust is a single quiet line that opens the audit.
 
-FIRST VIEWPORT: Carbon top bar with the brand, This week / Briefs (yellow underline on the active tab) and run status + New analysis at the right (opens an inline panel under the bar: up to 6 domains). Main column: a white card with the week title in condensed type, the summary, and a grey shelf rail of up to 4 price tickets (biggest moves, yellow stickers on cuts, black sticker on rises). Below: the Movements table, one row per store in the brief (max 6). Right column (~420px): "What to do" card with yellow numbered markers, then the trust line and, on the brief page, the tracking line ("Re-checked automatically every week until {date}"). On mobile the right column drops below the summary card and the rail scrolls horizontally.
+FIRST VIEWPORT: Carbon top bar with the brand, This week / Briefs (yellow underline on the active tab) and queue status + Add store at the right (opens an inline panel under the bar: one store website, the queue listed beneath). Main column: a white card with the week title in condensed type, the summary, and a grey shelf rail of up to 4 price tickets (biggest moves, yellow stickers on cuts, black sticker on rises). Below: the Movements table, one row per store in the brief (one for new briefs; older briefs list several). Right column (~420px): "What to do" card with yellow numbered markers, then the trust line and, on the brief page, the tracking line ("Re-checked automatically every week until {date}"). On mobile the right column drops below the summary card and the rail scrolls horizontally.
 
 FORM: Shelf-edge ticket, rank 1 of my grounded list (presented as the pick; the roll had assigned rank 5, Mail-Order Catalog). seed:d44730ec561b0893. Signature interaction: price tickets are the unit everywhere (home rail, brief detail product lists); the yellow sticker appears only on real cuts, never as decoration. Motion: 150–200ms state transitions only; no entrance choreography.
 

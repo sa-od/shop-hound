@@ -5,12 +5,24 @@ import type { BriefSummary, BriefDetail, CompetitorSummary, Verdict } from './se
 
 export type { BriefSummary, BriefDetail, CompetitorSummary, Verdict };
 
+/** One store waiting for, or going through, analysis. Position 1 is running now. */
+export interface QueueItem {
+  runId: string;
+  store: string;
+  status: 'queued' | 'running';
+  position: number;
+  queuedAt: string;
+}
+
 export interface Status {
   running: boolean;
   activeRun: { runId: string; competitors: string[]; startedAt: string } | null;
+  /** Stores queued or running, in order. Optional until every server sends it. */
+  queue?: QueueItem[];
   /** The most recent finished run — `error` is set when it failed. */
   lastRun: {
     runId: string;
+    store?: string;
     status: 'success' | 'failed';
     finishedAt: string | null;
     error: string | null;

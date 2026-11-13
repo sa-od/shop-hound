@@ -4,110 +4,62 @@ import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Loader2, Plus, X } from "lucide-react";
 import type { Status } from "@/lib/api";
-import { RUN_STARTED_EVENT, type RunStartedDetail } from "@/lib/run-client";
+import { useLiveStatus } from "@/lib/status-client";
 import { NewAnalysisForm } from "./NewAnalysisForm";
-
-// Poll fast only while a run is in flight; an idle open tab shouldn't hammer the database.
-const ACTIVE_POLL_MS = 5_000;
-const IDLE_POLL_MS = 15_000;
-
-function elapsed(since: string, now: number) {
-  const s = Math.max(0, Math.floor((now - Date.parse(since)) / 1000));
-  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
-}
 
 function shortDate(iso: string) {
   return new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric" });
 }
 
 /**
- * Run status and "New analysis". Follows any run (started here, from a brief's
- * "Run again", or by the daily job) and refreshes the page when a brief lands.
+ * Queue status and "Add store". Follows every store in the queue (added here,
+ * from a brief's "Run again", or by the daily job) and refreshes the page when
+ * a new brief lands.
  */
 export function RunControl({ initial }: { initial: Status }) {
   const router = useRouter();
-  const [status, setStatus] = useState<Status>(initial);
+  const live = useLiveStatus(initial);
+  const { status, queue, outcomes } = live;
   const [open, setOpen] = useState(false);
-  // A failed analysis newer than the latest brief is shown plainly from the start.
-  const [message, setMessage] = useState<string | null>(() =>
-    initial.lastRun?.status === "failed" &&
-    (!initial.lastBrief || (initial.lastRun.finishedAt ?? "") > initial.lastBrief.createdAt)
-      ? `The last analysis failed: ${initial.lastRun.error ?? "unknown error"}`
-      : null,
-  );
-  const [now, setNow] = useState(() => Date.now());
+  const [dismissed, setDismissed] = useState<string | null>(null);
   const lastBriefRef = useRef<string | null>(initial.lastBrief?.createdAt ?? null);
-  const lastRunRef = useRef<string | null>(initial.lastRun?.runId ?? null);
 
-  // A run started anywhere on the page shows here at once.
   useEffect(() => {
-    const onStarted = (e: Event) => {
-      const { runId, competitors } = (e as CustomEvent<RunStartedDetail>).detail;
-      setMessage(null);
-      setNow(Date.now());
-      setStatus((s) => ({ ...s, running: true, activeRun: { runId, competitors, startedAt: new Date().toISOString() } }));
-    };
-    window.addEventListener(RUN_STARTED_EVENT, onStarted);
-    return () => window.removeEventListener(RUN_STARTED_EVENT, onStarted);
-  }, []);
+    const newest = status.lastBrief?.createdAt ?? null;
+    if (newest && newest !== lastBriefRef.current) {
+      lastBriefRef.current = newest;
+      router.refresh(); // a new brief landed
+    }
+  }, [router, status.lastBrief?.createdAt]);
 
-  // Status polling.
-  useEffect(() => {
-    let cancelled = false;
-    let timer: ReturnType<typeof setTimeout>;
-    const tick = async () => {
-      let isRunning = status.running;
-      try {
-        const res = await fetch("/api/status", { cache: "no-store" });
-        if (res.ok) {
-          const s: Status = await res.json();
-          if (cancelled) return;
-          setStatus(s);
-          isRunning = s.running;
-          const newestRun = s.lastRun?.runId ?? null;
-          if (newestRun && newestRun !== lastRunRef.current) {
-            lastRunRef.current = newestRun;
-            if (s.lastRun?.status === "failed") setMessage(`The last analysis failed: ${s.lastRun.error ?? "unknown error"}`);
-          }
-          const newestBrief = s.lastBrief?.createdAt ?? null;
-          if (newestBrief && newestBrief !== lastBriefRef.current) {
-            lastBriefRef.current = newestBrief;
-            router.refresh(); // a new brief landed
-          }
-        }
-      } catch {
-        /* transient: keep polling */
-      }
-      if (!cancelled) timer = setTimeout(tick, isRunning ? ACTIVE_POLL_MS : IDLE_POLL_MS);
-    };
-    timer = setTimeout(tick, status.running ? ACTIVE_POLL_MS : IDLE_POLL_MS);
-    return () => {
-      cancelled = true;
-      clearTimeout(timer);
-    };
-  }, [router, status.running]);
+  const running = queue.find((q) => q.status === "running");
+  const waiting = queue.filter((q) => q.status === "queued").length;
 
-  // Elapsed-time clock while running.
-  useEffect(() => {
-    if (!status.running) return;
-    const id = setInterval(() => setNow(Date.now()), 1000);
-    return () => clearInterval(id);
-  }, [status.running]);
-
-  const lastRunFailed =
+  // A failure is shown in the strip until dismissed: one seen leaving the queue
+  // during this visit, or (on load) a failed last run newer than the latest brief.
+  const failedOutcome = outcomes.find((o) => o.status === "failed");
+  const failedOnLoad =
     status.lastRun?.status === "failed" &&
-    (!status.lastBrief || (status.lastRun.finishedAt ?? "") > status.lastBrief.createdAt);
+    (!status.lastBrief || (status.lastRun.finishedAt ?? "") > status.lastBrief.createdAt)
+      ? status.lastRun
+      : null;
+  const failure = failedOutcome
+    ? { id: failedOutcome.runId, store: failedOutcome.store, error: failedOutcome.error }
+    : failedOnLoad
+      ? { id: failedOnLoad.runId, store: failedOnLoad.store, error: failedOnLoad.error }
+      : null;
+  const showFailure = failure && failure.id !== dismissed && !open;
 
   return (
     <>
       <div className="ml-auto flex items-center gap-3 text-[13px]">
-        {status.running && status.activeRun ? (
+        {running ? (
           <span className="hidden items-center gap-1.5 text-[#d5d7db] md:inline-flex" aria-live="polite">
-            Analysing {status.activeRun.competitors.length} store{status.activeRun.competitors.length === 1 ? "" : "s"} ·{" "}
-            {elapsed(status.activeRun.startedAt, now)}
-            <span className="text-[#a8abb2]">(usually 1–2 min)</span>
+            <Loader2 size={13} className="animate-spin" />
+            Analysing {running.store}
+            {waiting > 0 && <span className="text-[#a8abb2]">· {waiting} queued</span>}
           </span>
-        ) : lastRunFailed ? (
+        ) : failure ? (
           <span className="hidden text-[#ffb4b4] md:inline">Last analysis failed</span>
         ) : status.lastBrief ? (
           <span className="hidden text-[#a8abb2] md:inline">Last brief {shortDate(status.lastBrief.createdAt)}</span>
@@ -116,39 +68,39 @@ export function RunControl({ initial }: { initial: Status }) {
         <button
           type="button"
           onClick={() => setOpen((o) => !o)}
-          disabled={status.running}
           aria-expanded={open}
           aria-controls="new-analysis-panel"
-          className="inline-flex items-center gap-1.5 rounded-md bg-white px-3 py-1.5 text-[13px] font-semibold text-ink transition-colors duration-150 hover:bg-sticker disabled:cursor-not-allowed disabled:bg-[#3a3c40] disabled:text-[#c5c7cc]"
+          className="inline-flex items-center gap-1.5 rounded-md bg-white px-3 py-1.5 text-[13px] font-semibold text-ink transition-colors duration-150 hover:bg-sticker"
         >
-          {status.running ? <Loader2 size={14} className="animate-spin" /> : open ? <X size={14} /> : <Plus size={14} />}
-          {status.running ? (
-            <>
-              Analysing<span className="md:hidden">{status.activeRun ? ` ${elapsed(status.activeRun.startedAt, now)}` : ""}</span>
-            </>
-          ) : open ? (
+          {open ? <X size={14} /> : running ? <Loader2 size={14} className="animate-spin" /> : <Plus size={14} />}
+          {open ? (
             "Close"
           ) : (
-            "New analysis"
+            <>
+              Add store
+              {queue.length > 0 && <span className="md:hidden"> · {queue.length} in queue</span>}
+            </>
           )}
         </button>
       </div>
 
-      {open && !status.running && (
+      {open && (
         <div id="new-analysis-panel" className="absolute inset-x-0 top-14 border-b border-edge bg-stock text-ink shadow-[0_8px_20px_rgb(17_17_17/0.08)]">
           <div className="mx-auto max-w-[1280px] px-4 py-5 sm:px-8">
             <div className="max-w-2xl">
-              <NewAnalysisForm autoFocus onStarted={() => setOpen(false)} />
+              <NewAnalysisForm initial={initial} autoFocus />
             </div>
           </div>
         </div>
       )}
 
-      {message && !open && (
+      {showFailure && (
         <div role="alert" className="absolute inset-x-0 top-14 border-b border-[#f0c9a0] bg-warn-soft text-warn">
           <div className="mx-auto flex max-w-[1280px] items-start gap-3 px-4 py-2.5 text-[13px] sm:px-8">
-            <p className="flex-1">{message}</p>
-            <button type="button" onClick={() => setMessage(null)} aria-label="Dismiss" className="rounded p-0.5 hover:bg-[#ffe7a8]">
+            <p className="flex-1">
+              {failure.store ? `${failure.store} couldn’t be analysed` : "The last analysis failed"}: {failure.error ?? "unknown error"}
+            </p>
+            <button type="button" onClick={() => setDismissed(failure.id)} aria-label="Dismiss" className="rounded p-0.5 hover:bg-[#ffe7a8]">
               <X size={15} />
             </button>
           </div>

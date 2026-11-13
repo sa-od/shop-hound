@@ -179,7 +179,7 @@ A near-neutral shelf palette with two reserved retail signals (markdown yellow, 
 
 ### Neutral
 - **Shelf Grey-White** (shelf): page ground; also empty-state insets inside cards and disabled input fill.
-- **Card Stock** (stock): cards, tickets, tables, the New analysis panel.
+- **Card Stock** (stock): cards, tickets, tables, the Add store panel.
 - **Card Edge** (edge): the 1px border around cards and tables, and table header rules.
 - **Hairline** (hairline): row dividers inside tables, lists and the audit grid; lighter than the card edge.
 - **Shelf Rail** (rail): the grey band tickets hang on.
@@ -223,11 +223,11 @@ Tables keep a minimum width (720–760px) and scroll inside their card; the Move
 
 ## Elevation & Depth
 
-Flat paper, with exactly one physical object: the ticket. Cards, tables and the rail sit flat on the shelf with a 1px edge border and no shadow. Tickets carry a short soft shadow plus a hard 1px bottom line, like card stock clipped to a rail, and lift 2px on hover. The only other shadow is the soft drop under the New analysis panel that opens below the top bar.
+Flat paper, with exactly one physical object: the ticket. Cards, tables and the rail sit flat on the shelf with a 1px edge border and no shadow. Tickets carry a short soft shadow plus a hard 1px bottom line, like card stock clipped to a rail, and lift 2px on hover. The only other shadow is the soft drop under the Add store panel that opens below the top bar.
 
 ### Shadow Vocabulary
 - **Ticket** (`box-shadow: 0 1px 2px rgb(17 17 17 / 0.12), 0 1px 0 #b9bdc4`): price tickets only.
-- **Drop panel** (`box-shadow: 0 8px 20px rgb(17 17 17 / 0.08)`): the inline New analysis panel under the sticky top bar.
+- **Drop panel** (`box-shadow: 0 8px 20px rgb(17 17 17 / 0.08)`): the inline Add store panel under the sticky top bar.
 
 ### Named Rules
 **The Only Ticket Lifts Rule.** Containers are bordered, not shadowed. The ticket shadow belongs to tickets; giving it to cards turns every surface into evidence.

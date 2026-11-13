@@ -23,7 +23,7 @@ export default async function BriefPage({ params }: { params: Promise<{ id: stri
   if (!brief) notFound();
 
   const competitors = brief.competitors.map((c) => c.competitor);
-  // The prompt-injection demo store is never tracked, so it gets no follow-up line.
+  // One store per brief now ([store]); older briefs list several. The prompt-injection demo store is never tracked.
   const tracking = competitors.includes(DEMO_STORE) ? null : await trackingFor(competitors);
   const { byStore, rest } = splitBrief(brief.briefMarkdown);
   const rows = movementRows(brief);
@@ -37,7 +37,15 @@ export default async function BriefPage({ params }: { params: Promise<{ id: stri
       <BriefOverview
         brief={brief}
         linkToFull={false}
-        asideFooter={tracking && <TrackingLine tracking={tracking} competitors={competitors} />}
+        asideFooter={
+          tracking && (
+            <TrackingLine
+              tracking={tracking}
+              competitors={competitors}
+              unreadable={brief.competitors.every((c) => c.status === "unverified")}
+            />
+          )
+        }
       />
 
       <div className="mt-10 space-y-6">
