@@ -32,6 +32,13 @@ async function main() {
     .collection(RUNS)
     .createIndex({ status: 1 }, { unique: true, partialFilterExpression: { status: 'running' }, name: 'one_active_run' });
   await db().collection(RUNS).createIndex({ startedAt: -1 });
+  // Queue: a store is queued or running at most once (see runs.ts).
+  await db()
+    .collection(RUNS)
+    .createIndex({ competitorKey: 1 }, { unique: true, partialFilterExpression: { active: true }, name: 'one_active_per_store' });
+  // Queue: claim the oldest queued run; status/last-finished lookups.
+  await db().collection(RUNS).createIndex({ status: 1, queuedAt: 1 });
+  await db().collection(RUNS).createIndex({ finishedAt: -1 });
   // Tracking: latest successful dashboard run per store set.
   await db().collection(RUNS).createIndex({ trigger: 1, status: 1, startedAt: -1 });
   // Tracking: latest brief per store set (decides when a set is due).

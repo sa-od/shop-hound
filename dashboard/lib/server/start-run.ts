@@ -2,11 +2,11 @@ import 'server-only';
 import { after } from 'next/server';
 import { getDeadline } from '@vercel/functions';
 import { runAnalysis } from './pipeline';
-import { createRun, finishRun, getActiveRun, RunAlreadyActiveError, type RunRecord, type RunTrigger } from './runs';
+import { claimNextRun, enqueueRun, finishRun, getActiveRun, getQueue, type RunRecord, type RunTrigger } from './runs';
 
 /**
  * Hobby's function limit — both the default and the maximum. Route files that
- * start runs export `maxDuration = 300` (it must be a literal there).
+ * drain the queue export `maxDuration = 300` (it must be a literal there).
  */
 export const FUNCTION_LIMIT_S = 300;
 
@@ -14,9 +14,12 @@ export const FUNCTION_LIMIT_S = 300;
 // (success or failure) before the function is stopped.
 const OUTCOME_MARGIN_MS = 10_000;
 
-// A scheduled set needs at least this long to be worth starting: a real run
-// takes 30–110s, and the pipeline itself reserves 90s after scraping.
-const MIN_SET_MS = 120_000;
+// A run needs at least this long to be worth starting: a store takes 5–60s,
+// and the pipeline itself reserves 90s after scraping.
+const MIN_RUN_MS = 120_000;
+
+// While another request's run holds the lock, check back this often.
+const WAIT_POLL_MS = 4_000;
 
 /** Absolute deadline for work started by the current request. */
 function requestDeadline(requestStartedAt: number): number {
@@ -26,7 +29,7 @@ function requestDeadline(requestStartedAt: number): number {
   return platform - OUTCOME_MARGIN_MS;
 }
 
-/** Execute one recorded run to completion, recording success or failure. Never throws. */
+/** Execute one claimed run to completion, recording success or failure. Never throws. */
 async function executeRun(run: RunRecord, deadlineAt: number): Promise<void> {
   try {
     const result = await runAnalysis({
@@ -45,55 +48,54 @@ async function executeRun(run: RunRecord, deadlineAt: number): Promise<void> {
 }
 
 /**
- * Start one pipeline run in the background of the current request.
+ * Work through the queue, one run at a time, until it is empty or this
+ * request's time runs short. Never throws.
  *
- * Writes the run record first (the database rejects a second concurrent run),
- * then hands the work to `after()`, which keeps the function alive until the
- * run settles — up to the function limit. The caller returns immediately.
- *
- * Throws RunAlreadyActiveError if a run is in progress.
+ * `wait`: when another request's run holds the lock, keep checking back
+ * (until our time runs short) so the queue keeps moving even if nobody is
+ * watching. Without it, give up at once — for cheap, frequent callers.
  */
-export async function startRun(competitors: string[], trigger: RunTrigger): Promise<RunRecord> {
+async function drainQueue(deadlineAt: number, wait: boolean): Promise<void> {
+  try {
+    for (;;) {
+      if (deadlineAt - Date.now() < MIN_RUN_MS) return; // leftovers: next request or the daily cron
+      const run = await claimNextRun();
+      if (run) {
+        await executeRun(run, deadlineAt);
+        continue;
+      }
+      // Nothing claimed: either the queue is empty, or another run is going.
+      if (!wait || (await getQueue()).every(r => r.status !== 'queued')) return;
+      await new Promise(r => setTimeout(r, WAIT_POLL_MS));
+    }
+  } catch (err) {
+    console.error('[queue] drain stopped:', err);
+  }
+}
+
+/** Keep the queue moving in the background of the current request. */
+export function drainInBackground(opts: { wait: boolean }): void {
   const deadlineAt = requestDeadline(Date.now());
-  const run = await createRun({ competitors, trigger });
-  after(() => executeRun(run, deadlineAt));
-  return run;
+  after(() => drainQueue(deadlineAt, opts.wait));
 }
 
 /**
- * Work through several store sets in the background of ONE request, one after
- * another (the run lock allows only one at a time). Each set gets its own run
- * record, so status, success and failure stay per set.
+ * Add a store set to the queue and keep the queue moving in the background
+ * of this request (it runs at once if nothing is ahead of it). Returns the
+ * run and its 1-based position (1 = running now / next).
  *
- * Stops starting new sets once less than MIN_SET_MS remains, or if a user's
- * run takes the lock in between; whatever is left is still due and is picked
- * up by the next scheduled invocation.
- *
- * Throws RunAlreadyActiveError up front if a run is already in progress.
+ * Throws QueueFullError when the queue is full.
  */
-export async function startScheduledRuns(sets: string[][], trigger: RunTrigger): Promise<void> {
-  const deadlineAt = requestDeadline(Date.now());
-  if (await getActiveRun()) throw new RunAlreadyActiveError();
+export async function queueRun(competitors: string[], trigger: RunTrigger): Promise<{ run: RunRecord; position: number; existing: boolean }> {
+  const { run, existing } = await enqueueRun({ competitors, trigger });
+  drainInBackground({ wait: true });
+  const queue = await getQueue();
+  const index = queue.findIndex(r => r.runId === run.runId);
+  return { run, existing, position: index === -1 ? 1 : index + 1 };
+}
 
-  after(async () => {
-    for (const [i, competitors] of sets.entries()) {
-      const remaining = deadlineAt - Date.now();
-      if (remaining < MIN_SET_MS) {
-        console.log(`[scheduled] ${sets.length - i} set(s) deferred — ${Math.round(remaining / 1000)}s left`);
-        return;
-      }
-      let run: RunRecord;
-      try {
-        run = await createRun({ competitors, trigger });
-      } catch (err) {
-        if (err instanceof RunAlreadyActiveError) {
-          console.log(`[scheduled] a run started in between — ${sets.length - i} set(s) deferred`);
-          return;
-        }
-        console.error('[scheduled] could not record run:', err);
-        return;
-      }
-      await executeRun(run, deadlineAt);
-    }
-  });
+/** Is anything waiting while nothing runs? (cheap check for /api/status) */
+export async function queueIsStalled(): Promise<boolean> {
+  const queue = await getQueue();
+  return queue.length > 0 && queue.every(r => r.status === 'queued') && !(await getActiveRun());
 }

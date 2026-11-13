@@ -7,7 +7,7 @@
  * No deadline by default; pass --deadline=300 to rehearse the Hobby limit.
  */
 import { runAnalysis } from '../lib/server/pipeline';
-import { createRun, finishRun } from '../lib/server/runs';
+import { startRunNow, finishRun } from '../lib/server/runs';
 import { closeDb } from '../lib/server/db';
 
 async function main() {
@@ -17,7 +17,7 @@ async function main() {
   const deadlineAt = deadlineArg ? Date.now() + Number.parseInt(deadlineArg.split('=')[1], 10) * 1000 : undefined;
 
   const started = Date.now();
-  const run = await createRun({ competitors, trigger: 'cli' });
+  const run = await startRunNow({ competitors, trigger: 'cli' });
   console.log(`run ${run.runId} started (${competitors.join(', ') || 'COMPETITOR_STORES'})`);
   try {
     const result = await runAnalysis({

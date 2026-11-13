@@ -91,3 +91,13 @@ test('dueFirst: only due sets, longest-waiting first, never-briefed leading', ()
   });
   assert.deepEqual(dueFirst(sets).map(s => s.competitorKey), ['a.com', 'c.com', 'd.com']);
 });
+
+test('a store never scraped successfully is not tracked', () => {
+  const sets = computeTrackedSets({
+    ...base,
+    userRuns: [run(['real.com'], 1), run(['dead.com'], 1), run(['real.com', 'dead.com'], 1)],
+    lastBriefAt: new Map(),
+    scrapedStores: new Set(['real.com']),
+  });
+  assert.deepEqual(sets.map(s => s.competitorKey), ['real.com']);
+});

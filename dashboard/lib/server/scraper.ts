@@ -1,5 +1,6 @@
 import { normalizedProductSchema, type NormalizedProduct } from './types';
 import { firecrawlEnabled, extractCatalogWithFirecrawl } from './firecrawl';
+import { safeFetch, describeFetchError } from './safe-fetch';
 
 /**
  * Hybrid ingestion (PRD §5.1) — Shopify-first, Firecrawl-fallback.
@@ -27,34 +28,81 @@ interface ShopifyProductsResponse {
 export function normalizeDomain(input: string): string {
   return input
     .trim()
-    .replace(/^https?:\/\//, '')
-    .replace(/\/.*$/, '')
-    .toLowerCase();
+    .replace(/^https?:\/\//i, '')
+    .replace(/[/?#].*$/, '')
+    .replace(/:\d+$/, '')
+    .replace(/\.$/, '')
+    .toLowerCase()
+    .replace(/^www\./, '');
 }
+
+/**
+ * The store's site could not be reached at all (no DNS, refused, timed out,
+ * private address, bad certificate) — as opposed to "reachable, but not a
+ * Shopify catalogue". Unreachable stores skip the paid Firecrawl fallback.
+ */
+export class StoreUnreachableError extends Error {}
 
 /** Milliseconds left before an absolute deadline (Infinity when none). */
 export function msUntil(deadlineAt?: number): number {
   return deadlineAt === undefined ? Number.POSITIVE_INFINITY : deadlineAt - Date.now();
 }
 
+/**
+ * Find which origin serves the catalogue: some stores only answer on www.
+ * Returns the first page's response from the first origin that works.
+ */
+async function openCatalog(host: string, deadlineAt?: number): Promise<{ base: string; first: ShopifyProductsResponse }> {
+  const reasons: string[] = [];
+  let reachable = false;
+  for (const base of [host, `www.${host}`]) {
+    const budget = Math.min(PAGE_TIMEOUT_MS, msUntil(deadlineAt));
+    if (budget <= 1_000) throw new Error('time budget exhausted before the store could be scraped');
+    try {
+      const res = await safeFetch(`https://${base}/products.json?limit=${PAGE_LIMIT}&page=1`, {
+        headers: { 'User-Agent': 'Mozilla/5.0 (compatible; CompetitiveIntelBot/1.0)', Accept: 'application/json' },
+        signal: AbortSignal.timeout(budget),
+      });
+      reachable = true;
+      if (!res.ok) {
+        reasons.push(`not a Shopify catalogue (HTTP ${res.status})`);
+        continue;
+      }
+      const data = (await res.json().catch(() => null)) as ShopifyProductsResponse | null;
+      if (!data || !Array.isArray(data.products)) {
+        reasons.push('not a Shopify catalogue');
+        continue;
+      }
+      return { base, first: data };
+    } catch (err) {
+      reasons.push(describeFetchError(err));
+    }
+  }
+  const reason = reasons[0] ?? 'store could not be reached';
+  throw reachable ? new Error(reason) : new StoreUnreachableError(`could not reach the store — ${reason}`);
+}
+
 export async function scrapeShopifyCatalog(domain: string, deadlineAt?: number): Promise<NormalizedProduct[]> {
   const host = normalizeDomain(domain);
   const products: NormalizedProduct[] = [];
+  const { base, first } = await openCatalog(host, deadlineAt);
 
   for (let page = 1; page <= MAX_PAGES; page++) {
-    const budget = Math.min(PAGE_TIMEOUT_MS, msUntil(deadlineAt));
-    if (budget <= 1_000) throw new Error(`time budget exhausted before page ${page}`);
-    const url = `https://${host}/products.json?limit=${PAGE_LIMIT}&page=${page}`;
-    const res = await fetch(url, {
-      headers: { 'User-Agent': 'Mozilla/5.0 (compatible; CompetitiveIntelBot/1.0)' },
-      signal: AbortSignal.timeout(budget),
-    });
-    if (!res.ok) {
-      throw new Error(`GET ${url} → ${res.status}`);
-    }
-    const data = (await res.json()) as ShopifyProductsResponse;
-    if (!Array.isArray(data.products)) {
-      throw new Error(`GET ${url} → unexpected payload shape`);
+    let data: ShopifyProductsResponse;
+    if (page === 1) {
+      data = first;
+    } else {
+      const budget = Math.min(PAGE_TIMEOUT_MS, msUntil(deadlineAt));
+      if (budget <= 1_000) break; // keep the pages we have
+      const res = await safeFetch(`https://${base}/products.json?limit=${PAGE_LIMIT}&page=${page}`, {
+        headers: { 'User-Agent': 'Mozilla/5.0 (compatible; CompetitiveIntelBot/1.0)', Accept: 'application/json' },
+        signal: AbortSignal.timeout(budget),
+      }).catch(err => {
+        throw new Error(`catalogue page ${page} failed — ${describeFetchError(err)}`);
+      });
+      if (!res.ok) throw new Error(`catalogue page ${page} failed (HTTP ${res.status})`);
+      data = (await res.json()) as ShopifyProductsResponse;
+      if (!Array.isArray(data.products)) throw new Error(`catalogue page ${page} had an unexpected shape`);
     }
 
     for (const p of data.products) {
@@ -130,12 +178,27 @@ export async function scrapeCatalog(
   }
   try {
     const products = await scrapeShopifyCatalog(host, deadlineAt);
-    if (products.length === 0) throw new Error('empty Shopify catalog');
+    if (products.length === 0) throw new Error('the Shopify catalogue is empty');
     return { products, source: 'shopify' };
   } catch (shopifyErr) {
-    if (!firecrawlEnabled()) throw shopifyErr;
-    console.warn(`[scrape] ${host}: Shopify path failed (${shopifyErr}), falling back to Firecrawl`);
-    const products = await extractCatalogWithFirecrawl(host, deadlineAt);
-    return { products, source: 'firecrawl' };
+    // A site that can't be reached at all won't be reachable for Firecrawl
+    // either — don't pay for the attempt.
+    if (shopifyErr instanceof StoreUnreachableError || !firecrawlEnabled()) throw shopifyErr;
+    const why = shopifyErr instanceof Error ? shopifyErr.message : String(shopifyErr);
+    console.warn(`[scrape] ${host}: Shopify path failed (${why}), falling back to Firecrawl`);
+    try {
+      const products = await extractCatalogWithFirecrawl(host, deadlineAt);
+      return { products, source: 'firecrawl' };
+    } catch (fcErr) {
+      const msg = fcErr instanceof Error ? fcErr.message : String(fcErr);
+      console.warn(`[scrape] ${host}: Firecrawl failed: ${msg}`);
+      // Shown on the brief: say what it means, not which service failed how.
+      const detail = /no usable products/.test(msg)
+        ? 'no products were found on the site'
+        : /timed out|time budget|abort/i.test(msg)
+          ? 'reading the site took too long'
+          : 'the site could not be read';
+      throw new Error(`not a Shopify store, and ${detail}`);
+    }
   }
 }

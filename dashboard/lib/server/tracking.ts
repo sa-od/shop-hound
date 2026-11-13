@@ -1,4 +1,4 @@
-import { db, RUNS, BRIEFS } from './db';
+import { db, RUNS, BRIEFS, SNAPSHOTS } from './db';
 import { INJECTION_DEMO_DOMAIN } from './scraper';
 
 /**
@@ -14,6 +14,9 @@ import { INJECTION_DEMO_DOMAIN } from './scraper';
  * - COMPETITOR_STORES, when set, is one extra set tracked indefinitely.
  * - At most MAX_TRACKED_SETS user sets are tracked (most recently run first),
  *   which bounds the weekly spend.
+ * - Only stores that were scraped successfully at least once are tracked: a
+ *   fake, dead or non-store site gets one brief explaining why, never a
+ *   weekly bill.
  */
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -65,6 +68,8 @@ export interface UserRunFact {
 export function computeTrackedSets(args: {
   userRuns: UserRunFact[];
   lastBriefAt: Map<string, Date>;
+  /** Stores with at least one saved snapshot; omitted = don't filter. */
+  scrapedStores?: Set<string>;
   defaultCompetitors: string[];
   now: Date;
   trackDays?: number;
@@ -100,6 +105,7 @@ export function computeTrackedSets(args: {
     .filter(r => r.lastUserRunAt.getTime() + trackMs > now.getTime()) // still in window
     .filter(r => !r.competitors.includes(INJECTION_DEMO_DOMAIN)) // the honeypot is a demo, not a store
     .filter(r => r.competitors.length > 0)
+    .filter(r => !args.scrapedStores || r.competitors.every(c => args.scrapedStores!.has(c)))
     .sort((a, b) => b.lastUserRunAt.getTime() - a.lastUserRunAt.getTime())
     .slice(0, maxSets)
     .map(r => entry(r.competitorKey, r.competitors, 'user', r.lastUserRunAt));
@@ -137,6 +143,12 @@ async function loadUserRuns(now: Date): Promise<UserRunFact[]> {
   return rows.map(r => ({ competitorKey: r._id, competitors: r.competitors, lastUserRunAt: r.lastUserRunAt }));
 }
 
+async function loadScrapedStores(stores: string[]): Promise<Set<string>> {
+  if (stores.length === 0) return new Set();
+  const found = await db().collection(SNAPSHOTS).distinct('competitor', { competitor: { $in: stores } });
+  return new Set(found as string[]);
+}
+
 async function loadLastBriefAt(keys: string[]): Promise<Map<string, Date>> {
   if (keys.length === 0) return new Map();
   const rows = await db()
@@ -153,8 +165,11 @@ async function loadLastBriefAt(keys: string[]): Promise<Map<string, Date>> {
 export async function listTrackedSets(now = new Date()): Promise<TrackedSet[]> {
   const userRuns = await loadUserRuns(now);
   const keys = [...userRuns.map(r => r.competitorKey), competitorKeyOf(defaultCompetitors())].filter(Boolean);
-  const lastBriefAt = await loadLastBriefAt(keys);
-  return computeTrackedSets({ userRuns, lastBriefAt, defaultCompetitors: defaultCompetitors(), now });
+  const [lastBriefAt, scrapedStores] = await Promise.all([
+    loadLastBriefAt(keys),
+    loadScrapedStores([...new Set(userRuns.flatMap(r => r.competitors))]),
+  ]);
+  return computeTrackedSets({ userRuns, lastBriefAt, scrapedStores, defaultCompetitors: defaultCompetitors(), now });
 }
 
 /** Tracked sets that are due now, longest-waiting first. */
@@ -165,12 +180,16 @@ export async function getDueSets(now = new Date()): Promise<TrackedSet[]> {
 /**
  * Tracking status for one store set — for the brief page. When tracking has
  * lapsed, `trackedUntil` still says when it ended (so the UI can offer
- * "run again to resume"); it is null only if a user never ran this set.
+ * "run again to resume"); it is null if a user never ran this set, or if it
+ * was never scraped successfully (so it is not re-checked).
  */
 export async function trackingFor(competitors: string[], now = new Date()): Promise<TrackingStatus> {
   const key = competitorKeyOf(competitors);
   const tracked = (await listTrackedSets(now)).find(s => s.competitorKey === key);
   if (tracked) return { tracked: true, trackedUntil: tracked.trackedUntil, nextCheck: tracked.nextCheck };
+
+  const scraped = await loadScrapedStores(key.split(','));
+  if (!key.split(',').every(c => scraped.has(c))) return { tracked: false, trackedUntil: null, nextCheck: null };
 
   const last = await db()
     .collection(RUNS)
