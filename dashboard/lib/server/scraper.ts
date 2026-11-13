@@ -48,6 +48,37 @@ export function msUntil(deadlineAt?: number): number {
   return deadlineAt === undefined ? Number.POSITIVE_INFINITY : deadlineAt - Date.now();
 }
 
+const USER_AGENT = 'Mozilla/5.0 (compatible; CompetitiveIntelBot/1.0)';
+const MAX_RETRY_AFTER_MS = 8_000;
+
+/** What an HTTP failure means for the brief reader. */
+function httpReason(status: number): string {
+  if (status === 429) return 'the store is limiting automated requests right now';
+  if (status === 401 || status === 403) return 'the store blocks automated access';
+  if (status >= 500) return `the store's server returned an error (HTTP ${status})`;
+  return `not a Shopify catalogue (HTTP ${status})`;
+}
+
+/**
+ * GET one catalogue page. On 429, honour the store's Retry-After (when short
+ * enough to fit) and ask once more — politely, as the same bot.
+ */
+async function fetchCatalogPage(base: string, page: number, budget: number, deadlineAt?: number) {
+  const get = (ms: number) =>
+    safeFetch(`https://${base}/products.json?limit=${PAGE_LIMIT}&page=${page}`, {
+      headers: { 'User-Agent': USER_AGENT, Accept: 'application/json' },
+      signal: AbortSignal.timeout(ms),
+    });
+  const res = await get(budget);
+  if (res.status !== 429) return res;
+  const header = Number.parseInt(res.headers.get('retry-after') ?? '', 10);
+  const waitMs = Number.isFinite(header) ? header * 1000 : 3_000;
+  if (waitMs > MAX_RETRY_AFTER_MS || msUntil(deadlineAt) < waitMs + 5_000) return res;
+  await res.body?.cancel().catch(() => {});
+  await new Promise(r => setTimeout(r, waitMs));
+  return get(Math.min(PAGE_TIMEOUT_MS, msUntil(deadlineAt)));
+}
+
 /**
  * Find which origin serves the catalogue: some stores only answer on www.
  * Returns the first page's response from the first origin that works.
@@ -59,13 +90,12 @@ async function openCatalog(host: string, deadlineAt?: number): Promise<{ base: s
     const budget = Math.min(PAGE_TIMEOUT_MS, msUntil(deadlineAt));
     if (budget <= 1_000) throw new Error('time budget exhausted before the store could be scraped');
     try {
-      const res = await safeFetch(`https://${base}/products.json?limit=${PAGE_LIMIT}&page=1`, {
-        headers: { 'User-Agent': 'Mozilla/5.0 (compatible; CompetitiveIntelBot/1.0)', Accept: 'application/json' },
-        signal: AbortSignal.timeout(budget),
-      });
+      const res = await fetchCatalogPage(base, 1, budget, deadlineAt);
       reachable = true;
       if (!res.ok) {
-        reasons.push(`not a Shopify catalogue (HTTP ${res.status})`);
+        reasons.push(httpReason(res.status));
+        // Limited or blocked: the www. form is the same store behind the same limits.
+        if (res.status === 429 || res.status === 403) break;
         continue;
       }
       const data = (await res.json().catch(() => null)) as ShopifyProductsResponse | null;
@@ -94,13 +124,10 @@ export async function scrapeShopifyCatalog(domain: string, deadlineAt?: number):
     } else {
       const budget = Math.min(PAGE_TIMEOUT_MS, msUntil(deadlineAt));
       if (budget <= 1_000) break; // keep the pages we have
-      const res = await safeFetch(`https://${base}/products.json?limit=${PAGE_LIMIT}&page=${page}`, {
-        headers: { 'User-Agent': 'Mozilla/5.0 (compatible; CompetitiveIntelBot/1.0)', Accept: 'application/json' },
-        signal: AbortSignal.timeout(budget),
-      }).catch(err => {
+      const res = await fetchCatalogPage(base, page, budget, deadlineAt).catch(err => {
         throw new Error(`catalogue page ${page} failed — ${describeFetchError(err)}`);
       });
-      if (!res.ok) throw new Error(`catalogue page ${page} failed (HTTP ${res.status})`);
+      if (!res.ok) throw new Error(`catalogue page ${page} failed — ${httpReason(res.status)}`);
       data = (await res.json()) as ShopifyProductsResponse;
       if (!Array.isArray(data.products)) throw new Error(`catalogue page ${page} had an unexpected shape`);
     }
@@ -198,7 +225,8 @@ export async function scrapeCatalog(
         : /timed out|time budget|abort/i.test(msg)
           ? 'reading the site took too long'
           : 'the site could not be read';
-      throw new Error(`not a Shopify store, and ${detail}`);
+      const lead = /^not a Shopify catalogue/.test(why) ? 'not a Shopify store' : why;
+      throw new Error(`${lead}, and ${detail}`);
     }
   }
 }

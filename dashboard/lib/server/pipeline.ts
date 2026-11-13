@@ -167,6 +167,18 @@ export async function runAnalysis(opts: RunOptions): Promise<RunResult> {
       '_This is the 0%-hallucination guarantee working: untrusted or malicious input is blocked,_',
       '_never summarized._',
     ].join('\n');
+  } else if (diffs.every(d => d.status === 'unverified')) {
+    // Nothing was read, so there is nothing to analyse. Don't ask the model:
+    // it would write generic advice with no data behind it.
+    const stores = diffs.map(d => d.competitor).join(', ');
+    brief = [
+      '# Nothing to report this time',
+      '',
+      `We couldn't read ${stores} on this check, so this brief makes no claims about ${diffs.length > 1 ? 'them' : 'it'}.`,
+      '',
+      dataConfidenceSection(diff),
+    ].join('\n');
+    log('[generate] skipped — no store could be read');
   } else {
     // Week-over-week trend context from the archive: prior briefs covering
     // any of this run's competitors, newest first. Failure here never blocks.
