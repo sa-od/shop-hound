@@ -7,7 +7,7 @@ import { ChangeRow } from "./shelf";
  */
 export function CatalogSnapshot({ catalog: c }: { catalog: CatalogSummary }) {
   const m = (n: number) => formatMoney(n, c.currency);
-  const stockPct = c.productCount ? Math.round((c.inStock / c.productCount) * 100) : 0;
+  const stockPct = c.inStockPct ?? (c.productCount ? Math.round((c.inStock / c.productCount) * 100) : 0);
 
   const stats = [
     {

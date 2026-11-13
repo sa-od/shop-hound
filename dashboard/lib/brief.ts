@@ -105,6 +105,8 @@ export interface CatalogSummary {
   priceBands: { label: string; count: number }[];
   inStock: number;
   soldOut: number;
+  /** Whole percent, as the brief cites it. */
+  inStockPct?: number;
   productTypes: { name: string; count: number }[];
   vendors: { name: string; count: number }[];
   avgVariants: number;
