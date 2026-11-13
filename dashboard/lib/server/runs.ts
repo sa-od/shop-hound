@@ -1,5 +1,6 @@
 import { MongoServerError } from 'mongodb';
 import { db, RUNS } from './db';
+import { competitorKeyOf } from './tracking';
 
 /**
  * Pipeline run records. Fluid Compute shares instances and scales to zero, so
@@ -15,6 +16,8 @@ export interface RunRecord {
   runId: string;
   trigger: RunTrigger;
   competitors: string[];
+  /** The store set, canonicalised — matches the brief's key; drives tracking. */
+  competitorKey: string;
   status: RunStatus;
   startedAt: string;
   finishedAt: string | null;
@@ -26,6 +29,7 @@ interface RunDoc {
   _id: string;
   trigger: RunTrigger;
   competitors: string[];
+  competitorKey: string;
   status: RunStatus;
   startedAt: Date;
   finishedAt: Date | null;
@@ -52,6 +56,7 @@ function toRecord(d: RunDoc): RunRecord {
     runId: d._id,
     trigger: d.trigger,
     competitors: d.competitors,
+    competitorKey: d.competitorKey ?? competitorKeyOf(d.competitors),
     status: d.status,
     startedAt: d.startedAt.toISOString(),
     finishedAt: d.finishedAt?.toISOString() ?? null,
@@ -75,6 +80,7 @@ export async function createRun(args: { competitors: string[]; trigger: RunTrigg
     _id: `run-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
     trigger: args.trigger,
     competitors: args.competitors,
+    competitorKey: competitorKeyOf(args.competitors),
     status: 'running',
     startedAt: new Date(),
     finishedAt: null,

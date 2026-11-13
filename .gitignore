@@ -20,3 +20,4 @@ dist
 # dashboard is a separate Vercel app
 dashboard/node_modules
 dashboard/.next
+.env*

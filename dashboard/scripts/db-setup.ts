@@ -32,6 +32,10 @@ async function main() {
     .collection(RUNS)
     .createIndex({ status: 1 }, { unique: true, partialFilterExpression: { status: 'running' }, name: 'one_active_run' });
   await db().collection(RUNS).createIndex({ startedAt: -1 });
+  // Tracking: latest successful dashboard run per store set.
+  await db().collection(RUNS).createIndex({ trigger: 1, status: 1, startedAt: -1 });
+  // Tracking: latest brief per store set (decides when a set is due).
+  await db().collection(BRIEFS).createIndex({ competitorKey: 1, createdAt: -1 });
   console.log('indexes ok');
 
   // Atlas Vector Search index (Atlas only — not available on self-hosted mongod).

@@ -3,7 +3,7 @@ import { scrapeCatalog, normalizeDomain, msUntil } from './scraper';
 import { embedProducts } from './embeddings';
 import { saveSnapshot, getPreviousSnapshot } from './snapshot-store';
 import { diffSnapshots, verifyDiffAgainstPayload } from './diff-engine';
-import { groundingCheck, safetyAudit } from './enkrypt';
+import { groundingCheck, safetyAudit, maskCompetitorDomains } from './enkrypt';
 import { briefsForCompetitors, saveBrief } from './briefs-store';
 import { generateGrowthBrief } from './agent';
 
@@ -135,8 +135,12 @@ export async function runAnalysis(opts: RunOptions): Promise<RunResult> {
   // Scan BOTH what the agent will see (the diff JSON) and the raw scraped
   // titles — injection can hide in any untrusted string. (Enkrypt caps at 30k
   // chars; the diff comes first so agent-bound content is always covered.)
+  // Competitor domains are masked for the detector: its PII check tags bare
+  // domains as emails (reproduced: "pipsnacks.com" → email, with no "@"
+  // anywhere in the payload). A real address keeps its domain and is caught.
   const scrapedTitles = snapshots.flatMap(s => s.products.map(p => p.title));
-  const grounding = await groundingCheck(`${JSON.stringify(diff)}\n${scrapedTitles.join('\n')}`);
+  const diffJson = JSON.stringify(diff);
+  const grounding = await groundingCheck(maskCompetitorDomains(`${diffJson}\n${scrapedTitles.join('\n')}`, diffJson));
   if (groundingErrors.length > 0) {
     grounding.greenLight = false;
     grounding.violations.push(...groundingErrors);
