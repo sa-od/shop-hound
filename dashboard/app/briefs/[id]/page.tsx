@@ -58,6 +58,7 @@ export default async function BriefPage({ params }: { params: Promise<{ id: stri
             row={r}
             // Baseline and unchecked stores have nothing to read beyond "none"; the card says why.
             notes={r.status === "verified" ? notesFor(byStore, r.competitor) : null}
+            tracked={tracking?.tracked ?? null}
           />
         ))}
 

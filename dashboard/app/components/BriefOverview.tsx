@@ -43,7 +43,9 @@ export function BriefOverview({
   const tickets = priceTickets(brief);
   const rows = movementRows(brief);
   const diffed = rows.filter((r) => r.status === "verified").length;
-  const allBaseline = rows.length > 0 && rows.every((r) => r.status !== "verified");
+  const baseline = diffed === 0 && rows.some((r) => r.status === "first_snapshot");
+  // Nothing could be read: no claims, no advice, no table. Each store card says why.
+  const noneRead = rows.length > 0 && rows.every((r) => r.status === "unverified");
 
   return (
     <div className="grid grid-cols-[minmax(0,1fr)] gap-6 lg:grid-cols-[minmax(0,1fr)_380px] lg:grid-rows-[auto_1fr] lg:gap-x-7">
@@ -88,9 +90,9 @@ export function BriefOverview({
                 ))}
               </Rail>
             </>
-          ) : (
+          ) : noneRead ? null : (
             <p className="mt-6 rounded-lg bg-shelf px-4 py-3.5 text-sm text-ink-2">
-              {allBaseline
+              {baseline
                 ? "Baseline week: catalogs captured for the first time. Price changes show from the next check."
                 : `No price changes from ${diffed} store${diffed === 1 ? "" : "s"} this week.`}
             </p>
@@ -108,9 +110,9 @@ export function BriefOverview({
       </div>
 
       <aside className="space-y-4 lg:sticky lg:top-20 lg:col-start-2 lg:row-span-2 lg:row-start-1 lg:self-start">
-        <Card>
-          <h2 className="font-cond text-xl font-bold">What to do</h2>
-          {recommendations.length > 0 ? (
+        {recommendations.length > 0 && (
+          <Card>
+            <h2 className="font-cond text-xl font-bold">What to do</h2>
             <ol className="mt-1">
               {recommendations.map((r, i) => (
                 <li key={i} className="flex gap-3 border-b border-[#eceef1] py-3.5 text-sm leading-relaxed text-ink-2 last:border-0 last:pb-0">
@@ -123,17 +125,16 @@ export function BriefOverview({
                 </li>
               ))}
             </ol>
-          ) : (
-            <p className="mt-2 text-sm text-ink-3">No recommendations in this brief.</p>
-          )}
-        </Card>
+          </Card>
+        )}
         <div className="space-y-2.5 px-1">
           <TrustLine brief={brief} />
           {asideFooter}
         </div>
       </aside>
 
-      <section className="min-w-0 lg:col-start-1 lg:row-start-2">
+      {!noneRead && (
+        <section className="min-w-0 lg:col-start-1 lg:row-start-2">
           <div className="mb-2.5 flex items-baseline justify-between gap-4">
             <h2 className="font-cond text-xl font-bold">Movements</h2>
             <span className="text-xs text-ink-3">
@@ -141,7 +142,8 @@ export function BriefOverview({
             </span>
           </div>
           <MovementsTable rows={rows} briefId={brief.id} />
-      </section>
+        </section>
+      )}
     </div>
   );
 }

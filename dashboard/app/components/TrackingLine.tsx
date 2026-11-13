@@ -56,6 +56,7 @@ export function TrackingLine({ tracking, competitors, unreadable }: { tracking: 
     canRunAgain = true;
   } else if (unreadable) {
     text = <>Not re-checked: we couldn’t read {competitors.length === 1 ? "this store" : "these stores"}.</>;
+    canRunAgain = true;
   } else {
     return null;
   }
@@ -76,7 +77,7 @@ export function TrackingLine({ tracking, competitors, unreadable }: { tracking: 
                 className="inline-flex items-center gap-1 font-semibold text-ink underline underline-offset-2 hover:no-underline disabled:cursor-not-allowed disabled:opacity-60"
               >
                 {pending && <Loader2 size={12} className="animate-spin" />}
-                Run again to resume
+                {tracking.trackedUntil ? "Run again to resume" : "Add it again"}
               </button>
             </>
           )}

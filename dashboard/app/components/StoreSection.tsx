@@ -24,7 +24,8 @@ function Capped<T>({ items, render, noun }: { items: T[]; render: (item: T) => R
   );
 }
 
-export function StoreSection({ brief, row, notes }: { brief: BriefDetail; row: MovementRow; notes: string | null }) {
+/** `tracked`: whether the daily job will re-check this store (null when unknown). */
+export function StoreSection({ brief, row, notes, tracked = null }: { brief: BriefDetail; row: MovementRow; notes: string | null; tracked?: boolean | null }) {
   const d = diffFor(brief, row.competitor);
   const tickets = priceTickets(brief).filter((t) => t.competitor === row.competitor);
 
@@ -50,7 +51,10 @@ export function StoreSection({ brief, row, notes }: { brief: BriefDetail; row: M
             <p className="mt-3 text-sm text-ink-2">First check for this store: its catalog is saved as the baseline. Changes show from the next check.</p>
           )}
           {row.status === "unverified" && (
-            <p className="mt-3 text-sm text-ink-2">Nothing from this store is in the brief. It’s tried again at the next check.</p>
+            <p className="mt-3 text-sm text-ink-2">
+              Nothing from this store is in the brief.
+              {tracked === true ? " It’s tried again at the next check." : tracked === false ? " Add it again to retry." : ""}
+            </p>
           )}
 
           {d && row.status === "verified" && (

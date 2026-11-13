@@ -71,9 +71,11 @@ export function TrustLine({ brief }: { brief: BriefSummary }) {
       href={`/briefs/${brief.id}#audit`}
       className="inline-flex items-center gap-1.5 text-xs text-ink-2 hover:text-ink hover:underline"
     >
-      <Icon size={14} className={brief.greenLight ? "text-ok" : "text-warn"} />
-      {brief.greenLight ? "Verified by Enkrypt AI" : "Did not pass the Enkrypt audit"} · {checked} of {brief.competitors.length} stores
-      checked · Audit
+      <Icon size={14} className={checked === 0 ? "text-ink-3" : brief.greenLight ? "text-ok" : "text-warn"} />
+      {checked === 0
+        ? "No store data to verify"
+        : `${brief.greenLight ? "Verified by Enkrypt AI" : "Did not pass the Enkrypt audit"} · ${checked} of ${brief.competitors.length} stores checked`}{" "}
+      · Audit
     </Link>
   );
 }

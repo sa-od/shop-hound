@@ -49,7 +49,8 @@ export function splitBrief(markdown: string): BriefSections {
     const heading = (nl === -1 ? part : part.slice(0, nl)).trim();
     const h = heading.toLowerCase();
     const body = nl === -1 ? '' : part.slice(nl + 1).trim();
-    if (/summary/.test(h)) {
+    // Briefs where nothing was read saved before the "## Summary" form used "# Nothing to report this time".
+    if (/summary|nothing to report/.test(h)) {
       summary = body;
       found = true;
     } else if (/recommendation|what to do|next steps|actions/.test(h)) {
