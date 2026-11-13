@@ -172,9 +172,10 @@ export async function runAnalysis(opts: RunOptions): Promise<RunResult> {
     // it would write generic advice with no data behind it.
     const stores = diffs.map(d => d.competitor).join(', ');
     brief = [
-      '# Nothing to report this time',
+      // "## Summary" is where the brief page takes its headline text from.
+      '## Summary',
       '',
-      `We couldn't read ${stores} on this check, so this brief makes no claims about ${diffs.length > 1 ? 'them' : 'it'}.`,
+      `Nothing to report this time. We couldn't read ${stores} on this check, so this brief makes no claims about ${diffs.length > 1 ? 'them' : 'it'}.`,
       '',
       dataConfidenceSection(diff),
     ].join('\n');
