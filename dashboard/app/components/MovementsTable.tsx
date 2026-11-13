@@ -3,7 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { ArrowDown, ArrowUpDown } from "lucide-react";
-import { formatPct, slug, type MovementRow } from "@/lib/brief";
+import { catalogLine, formatPct, lastKnownLine, slug, type MovementRow } from "@/lib/brief";
 import { StatusTag } from "./shelf";
 
 type Key = "total" | "priceChanges" | "biggest" | "newSkus" | "removed" | "titleChanges";
@@ -25,7 +25,10 @@ function subline(r: MovementRow) {
 }
 
 function noDiffText(r: MovementRow) {
-  return r.status === "first_snapshot" ? "First check: baseline saved. Changes show from the next check." : "Not checked this time.";
+  if (r.status === "first_snapshot") {
+    return r.catalog ? `First check: ${catalogLine(r.catalog)}` : "First check: baseline saved. Changes show from the next check.";
+  }
+  return r.lastKnown ? `Not checked this time. ${lastKnownLine(r.lastKnown)}.` : "Not checked this time.";
 }
 
 function Cell({ r, k }: { r: MovementRow; k: Exclude<Key, "total"> }) {

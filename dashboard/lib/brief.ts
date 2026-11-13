@@ -93,7 +93,36 @@ export function diffFor(brief: BriefDetail, competitor: string): CompetitorDiff 
   return brief.diff?.diffs.find(d => d.competitor === competitor);
 }
 
+/**
+ * The store's catalog as read on this check, summarised from the snapshot
+ * (backend: optional `catalog` on each read store's diff). Absent on briefs
+ * saved before it existed; the UI then keeps its plainer wording.
+ */
+export interface CatalogSummary {
+  productCount: number;
+  currency: string;
+  price: { min: number; median: number; max: number };
+  priceBands: { label: string; count: number }[];
+  inStock: number;
+  soldOut: number;
+  productTypes: { name: string; count: number }[];
+  vendors: { name: string; count: number }[];
+  avgVariants: number;
+  cheapest: { title: string; price: number; url: string }[];
+  priciest: { title: string; price: number; url: string }[];
+}
+
+/** The last successful read of a store that couldn't be read this time. */
+export interface LastKnown {
+  snapshotDate: string;
+  productCount: number;
+}
+
+type WithExtras = { catalog?: CatalogSummary; lastKnown?: LastKnown };
+
 export interface MovementRow extends CompetitorSummary {
+  catalog?: CatalogSummary;
+  lastKnown?: LastKnown;
   removed: number;
   /** Largest absolute price move, signed (−24 = a 24% cut). */
   biggest: number | null;
@@ -110,7 +139,16 @@ export function movementRows(brief: BriefDetail): MovementRow[] {
         ? d.priceChanges.reduce((m, p) => (Math.abs(p.changePct) > Math.abs(m) ? p.changePct : m), 0)
         : null;
       const removed = d?.removedSkus.length ?? 0;
-      return { ...c, removed, biggest, total: c.priceChanges + c.newSkus + c.titleChanges + removed };
+      // Read from the diff entry or the competitor summary, whichever the backend fills.
+      const extra = { ...(c as WithExtras), ...(d as WithExtras | undefined) };
+      return {
+        ...c,
+        catalog: extra.catalog,
+        lastKnown: extra.lastKnown,
+        removed,
+        biggest,
+        total: c.priceChanges + c.newSkus + c.titleChanges + removed,
+      };
     })
     .sort((a, b) => rank(a.status) - rank(b.status) || b.total - a.total);
 }
@@ -126,4 +164,31 @@ export const formatPrice = (n: number) => money.format(n);
 export function formatPct(n: number) {
   const r = Math.round(n);
   return `${r > 0 ? '+' : r < 0 ? '−' : ''}${Math.abs(r)}%`;
+}
+
+/** A price in the catalog's own currency; plain figures when the code isn't one Intl knows. */
+export function formatMoney(n: number, currency?: string) {
+  if (currency && /^[A-Z]{3}$/.test(currency)) {
+    try {
+      return new Intl.NumberFormat('en-US', { style: 'currency', currency }).format(n);
+    } catch {
+      /* fall through */
+    }
+  }
+  return formatPrice(n);
+}
+
+/** "429 products · $12.00–$98.00, median $35.00" */
+export function catalogLine(c: CatalogSummary) {
+  const m = (n: number) => formatMoney(n, c.currency);
+  return `${c.productCount.toLocaleString()} products · ${m(c.price.min)}–${m(c.price.max)}, median ${m(c.price.median)}`;
+}
+
+export function shortDay(iso: string) {
+  return new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' });
+}
+
+/** "Last read Nov 6: 140 products" */
+export function lastKnownLine(l: LastKnown) {
+  return `Last read ${shortDay(l.snapshotDate)}: ${l.productCount.toLocaleString()} products`;
 }

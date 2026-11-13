@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { AlertTriangle, ArrowRight } from "lucide-react";
 import type { BriefDetail } from "@/lib/api";
-import { movementRows, priceTickets, splitBrief } from "@/lib/brief";
+import { formatMoney, movementRows, priceTickets, splitBrief, type CatalogSummary } from "@/lib/brief";
 import { formatWeek } from "@/lib/utils";
 import { MovementsTable } from "./MovementsTable";
 import { Card, Rail, Ticket, TrustLine } from "./shelf";
@@ -25,6 +25,12 @@ export function Inline({ text }: { text: string }) {
 
 const TICKETS_SHOWN = 4;
 
+/** "429 products captured from goodr.com, priced $12.00–$98.00 (median $35.00)." */
+function baselineSentence(store: string, c: CatalogSummary) {
+  const m = (n: number) => formatMoney(n, c.currency);
+  return `${c.productCount.toLocaleString()} products captured from ${store}, priced ${m(c.price.min)}–${m(c.price.max)} (median ${m(c.price.median)}).`;
+}
+
 /**
  * The week at a glance: what changed (summary + biggest price tickets), what
  * to do, and who moved. Shared by "This week" and the top of a brief.
@@ -46,6 +52,13 @@ export function BriefOverview({
   const baseline = diffed === 0 && rows.some((r) => r.status === "first_snapshot");
   // Nothing could be read: no claims, no advice, no table. Each store card says why.
   const noneRead = rows.length > 0 && rows.every((r) => r.status === "unverified");
+  const baselineRows = rows.filter((r) => r.status === "first_snapshot" && r.catalog);
+  const baselineText =
+    baselineRows.length === 1
+      ? `Baseline week: ${baselineSentence(baselineRows[0].competitor, baselineRows[0].catalog!)} Price changes show from the next check.`
+      : baselineRows.length > 1
+        ? `Baseline week: ${baselineRows.reduce((n, r) => n + r.catalog!.productCount, 0).toLocaleString()} products captured across ${baselineRows.length} stores. Price changes show from the next check.`
+        : "Baseline week: catalogs captured for the first time. Price changes show from the next check.";
 
   return (
     <div className="grid grid-cols-[minmax(0,1fr)] gap-6 lg:grid-cols-[minmax(0,1fr)_380px] lg:grid-rows-[auto_1fr] lg:gap-x-7">
@@ -93,7 +106,7 @@ export function BriefOverview({
           ) : noneRead ? null : (
             <p className="mt-6 rounded-lg bg-shelf px-4 py-3.5 text-sm text-ink-2">
               {baseline
-                ? "Baseline week: catalogs captured for the first time. Price changes show from the next check."
+                ? baselineText
                 : `No price changes from ${diffed} store${diffed === 1 ? "" : "s"} this week.`}
             </p>
           )}

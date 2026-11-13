@@ -1,6 +1,7 @@
 import dynamicImport from "next/dynamic";
 import type { BriefDetail } from "@/lib/api";
-import { diffFor, formatPct, formatPrice, priceTickets, slug, type MovementRow } from "@/lib/brief";
+import { diffFor, formatPct, formatPrice, lastKnownLine, priceTickets, slug, type MovementRow } from "@/lib/brief";
+import { CatalogSnapshot } from "./CatalogSnapshot";
 import { Card, ChangeRow, Rail, StatusTag, Ticket } from "./shelf";
 
 const BriefMarkdown = dynamicImport(() => import("./BriefMarkdown").then((m) => m.BriefMarkdown));
@@ -47,12 +48,19 @@ export function StoreSection({ brief, row, notes, tracked = null }: { brief: Bri
 
       <div className={notes ? "mt-2 grid gap-x-8 lg:grid-cols-[minmax(0,1fr)_340px]" : "mt-2"}>
         <div className="min-w-0">
-          {row.status === "first_snapshot" && (
-            <p className="mt-3 text-sm text-ink-2">First check for this store: its catalog is saved as the baseline. Changes show from the next check.</p>
-          )}
+          {row.status === "first_snapshot" &&
+            (row.catalog ? (
+              <>
+                <p className="mt-3 text-sm text-ink-2">First check: here’s their catalog today. Changes show from the next check.</p>
+                <CatalogSnapshot catalog={row.catalog} />
+              </>
+            ) : (
+              <p className="mt-3 text-sm text-ink-2">First check for this store: its catalog is saved as the baseline. Changes show from the next check.</p>
+            ))}
           {row.status === "unverified" && (
             <p className="mt-3 text-sm text-ink-2">
               Nothing from this store is in the brief.
+              {row.lastKnown && ` ${lastKnownLine(row.lastKnown)}.`}
               {tracked === true ? " It’s tried again at the next check." : tracked === false ? " Add it again to retry." : ""}
             </p>
           )}
