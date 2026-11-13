@@ -1,0 +1,460 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-11-13T17:13:45+00:00",
+  "title": "Design System: Growth Briefs",
+  "extensions": {
+    "colorMeta": {
+      "ink": {
+        "role": "primary",
+        "displayName": "Carbon Ink",
+        "canonical": "#111111",
+        "tonalRamp": [
+          "#0b0b0b",
+          "#252525",
+          "#424242",
+          "#616161",
+          "#828282",
+          "#a5a5a5",
+          "#c9c9c9",
+          "#eeeeee"
+        ]
+      },
+      "sticker": {
+        "role": "secondary",
+        "displayName": "Markdown Sticker Yellow",
+        "canonical": "#ffd60a",
+        "tonalRamp": [
+          "#170700",
+          "#372100",
+          "#5a3d00",
+          "#805c00",
+          "#a27e00",
+          "#c1a31e",
+          "#e1c86d",
+          "#ffefaa"
+        ]
+      },
+      "cut": {
+        "role": "secondary",
+        "displayName": "Reduction Red",
+        "canonical": "#d11b23",
+        "tonalRamp": [
+          "#2a0000",
+          "#550000",
+          "#840003",
+          "#b70a18",
+          "#e0413d",
+          "#fc766c",
+          "#ffa59a",
+          "#ffd4ca"
+        ]
+      },
+      "ok": {
+        "role": "tertiary",
+        "displayName": "Verified Green",
+        "canonical": "#1d6f40",
+        "tonalRamp": [
+          "#001102",
+          "#002e14",
+          "#134f2c",
+          "#2a7146",
+          "#4e9466",
+          "#7bb58d",
+          "#a7d7b5",
+          "#d4fade"
+        ]
+      },
+      "ok-soft": {
+        "role": "tertiary",
+        "displayName": "Verified Wash",
+        "canonical": "#e4f3ea",
+        "tonalRamp": [
+          "#080c0a",
+          "#202723",
+          "#3b453f",
+          "#59655e",
+          "#79867e",
+          "#9da8a2",
+          "#c3ccc6",
+          "#e9f1ec"
+        ]
+      },
+      "warn": {
+        "role": "tertiary",
+        "displayName": "Caution Amber",
+        "canonical": "#8a5100",
+        "tonalRamp": [
+          "#1a0500",
+          "#3b1c00",
+          "#603700",
+          "#885313",
+          "#ac753a",
+          "#cb9a6b",
+          "#eac09a",
+          "#ffe8c9"
+        ]
+      },
+      "warn-soft": {
+        "role": "tertiary",
+        "displayName": "Caution Wash",
+        "canonical": "#fff3d1",
+        "tonalRamp": [
+          "#0f0b02",
+          "#2a2514",
+          "#49412c",
+          "#6a6145",
+          "#8c8265",
+          "#ada58c",
+          "#d0c9b4",
+          "#f4eede"
+        ]
+      },
+      "info": {
+        "role": "tertiary",
+        "displayName": "Baseline Blue",
+        "canonical": "#23479e",
+        "tonalRamp": [
+          "#010629",
+          "#0c2152",
+          "#213d7f",
+          "#385cae",
+          "#587fd4",
+          "#80a4ee",
+          "#aac9ff",
+          "#d6efff"
+        ]
+      },
+      "info-soft": {
+        "role": "tertiary",
+        "displayName": "Baseline Wash",
+        "canonical": "#e7edfb",
+        "tonalRamp": [
+          "#090b0f",
+          "#22252b",
+          "#3e424b",
+          "#5c616c",
+          "#7d828e",
+          "#a1a5af",
+          "#c5c9d2",
+          "#ebeef5"
+        ]
+      },
+      "ink-2": {
+        "role": "neutral",
+        "displayName": "Ink 2",
+        "canonical": "#464a52",
+        "tonalRamp": [
+          "#0a0b0e",
+          "#23252a",
+          "#3f4248",
+          "#5d6169",
+          "#7e828b",
+          "#a1a5ac",
+          "#c6c9cf",
+          "#eceef3"
+        ]
+      },
+      "ink-3": {
+        "role": "neutral",
+        "displayName": "Ink 3",
+        "canonical": "#62666f",
+        "tonalRamp": [
+          "#0a0b0e",
+          "#23252a",
+          "#3f4248",
+          "#5d6169",
+          "#7e828b",
+          "#a2a5ad",
+          "#c6c9d0",
+          "#eceef4"
+        ]
+      },
+      "shelf": {
+        "role": "neutral",
+        "displayName": "Shelf Grey-White",
+        "canonical": "#f4f5f7",
+        "tonalRamp": [
+          "#0b0b0c",
+          "#252526",
+          "#414243",
+          "#606163",
+          "#818284",
+          "#a4a5a6",
+          "#c8c9ca",
+          "#eeeeef"
+        ]
+      },
+      "stock": {
+        "role": "neutral",
+        "displayName": "Card Stock",
+        "canonical": "#ffffff",
+        "tonalRamp": [
+          "#0b0b0b",
+          "#252525",
+          "#424242",
+          "#616161",
+          "#828282",
+          "#a5a5a5",
+          "#c9c9c9",
+          "#eeeeee"
+        ]
+      },
+      "edge": {
+        "role": "neutral",
+        "displayName": "Card Edge",
+        "canonical": "#dadde2",
+        "tonalRamp": [
+          "#0a0b0d",
+          "#242527",
+          "#404245",
+          "#5f6165",
+          "#808287",
+          "#a3a5a9",
+          "#c7c9cc",
+          "#edeef1"
+        ]
+      },
+      "hairline": {
+        "role": "neutral",
+        "displayName": "Hairline",
+        "canonical": "#eceef1",
+        "tonalRamp": [
+          "#0b0b0c",
+          "#242526",
+          "#414244",
+          "#606164",
+          "#818285",
+          "#a4a5a7",
+          "#c8c9cb",
+          "#edeef0"
+        ]
+      },
+      "rail": {
+        "role": "neutral",
+        "displayName": "Shelf Rail",
+        "canonical": "#d9dce0",
+        "tonalRamp": [
+          "#0a0b0c",
+          "#242527",
+          "#404245",
+          "#5f6165",
+          "#808286",
+          "#a3a5a8",
+          "#c7c9cc",
+          "#edeef0"
+        ]
+      },
+      "bar-muted": {
+        "role": "neutral",
+        "displayName": "Bar Muted",
+        "canonical": "#a8abb2",
+        "tonalRamp": [
+          "#0a0b0d",
+          "#242528",
+          "#404247",
+          "#5f6167",
+          "#808288",
+          "#a3a5aa",
+          "#c7c9ce",
+          "#edeef2"
+        ]
+      }
+    },
+    "typographyMeta": {
+      "display": {
+        "displayName": "Display",
+        "purpose": "Week title and page titles; 32px below 640px."
+      },
+      "figure": {
+        "displayName": "Price Figure",
+        "purpose": "New price on a ticket; same cut at 16px on stickers and 15px on action markers."
+      },
+      "headline": {
+        "displayName": "Headline",
+        "purpose": "Page-section titles; 22px for card-level titles (store names at 700)."
+      },
+      "title": {
+        "displayName": "Title",
+        "purpose": "In-card section heads and markdown h2/h3."
+      },
+      "body": {
+        "displayName": "Body",
+        "purpose": "Tables, product rows, recommendations, form labels; metadata at 12–13px in ink-3."
+      },
+      "body-lead": {
+        "displayName": "Body Lead",
+        "purpose": "Executive summary and first-use copy, max 70ch."
+      },
+      "label": {
+        "displayName": "Label",
+        "purpose": "Uppercase table column headers only."
+      }
+    },
+    "shadows": [
+      {
+        "name": "ticket",
+        "value": "0 1px 2px rgb(17 17 17 / 0.12), 0 1px 0 #b9bdc4",
+        "purpose": "Price tickets only: card stock clipped to a rail."
+      },
+      {
+        "name": "drop-panel",
+        "value": "0 8px 20px rgb(17 17 17 / 0.08)",
+        "purpose": "The inline New analysis panel under the sticky top bar."
+      }
+    ],
+    "motion": [
+      {
+        "name": "state",
+        "value": "150ms ease (Tailwind default curve)",
+        "purpose": "Colour, opacity and border transitions on interactive elements."
+      },
+      {
+        "name": "ticket-lift",
+        "value": "translateY(-2px) over 150ms",
+        "purpose": "Ticket hover."
+      },
+      {
+        "name": "reduced-motion",
+        "value": "0.01ms",
+        "purpose": "All transitions and animations collapse under prefers-reduced-motion."
+      }
+    ],
+    "breakpoints": [
+      {
+        "name": "sm",
+        "value": "640px"
+      },
+      {
+        "name": "md",
+        "value": "768px"
+      },
+      {
+        "name": "lg",
+        "value": "1024px"
+      },
+      {
+        "name": "container",
+        "value": "1280px"
+      }
+    ]
+  },
+  "components": [
+    {
+      "name": "Price Ticket on Rail",
+      "kind": "custom",
+      "refersTo": "ticket",
+      "description": "A price change as a shelf-edge ticket; yellow sticker on a cut, carbon on a rise. Always hangs on the grey rail.",
+      "html": "<div class=\"ds-rail\"><a class=\"ds-ticket\" href=\"#\"><span class=\"ds-sticker ds-sticker-cut\">-60%</span><span class=\"ds-ticket-title\">No Regifts - Large</span><span class=\"ds-ticket-store\">goodr.com</span><span class=\"ds-ticket-was\">was <s>5.00</s></span><span class=\"ds-ticket-price ds-cut\">2.00</span></a><a class=\"ds-ticket\" href=\"#\"><span class=\"ds-sticker ds-sticker-rise\">+8%</span><span class=\"ds-ticket-title\">Trail Mix 500g</span><span class=\"ds-ticket-store\">store-two.com</span><span class=\"ds-ticket-was\">was <s>12.00</s></span><span class=\"ds-ticket-price\">12.96</span></a></div>",
+      "css": ":host{--color-ink:#111111;--color-ink-2:#464a52;--color-ink-3:#62666f;--color-shelf:#f4f5f7;--color-stock:#ffffff;--color-edge:#dadde2;--color-rail:#d9dce0;--color-sticker:#ffd60a;--color-cut:#d11b23;--color-ok:#1d6f40;--color-ok-soft:#e4f3ea;--color-warn:#8a5100;--color-warn-soft:#fff3d1;--color-info:#23479e;--color-info-soft:#e7edfb;}.ds-rail{display:flex;gap:12px;flex-wrap:wrap;width:fit-content;background:var(--color-rail);border-radius:8px;padding:16px 14px 14px;font-family:'Barlow',ui-sans-serif,system-ui,sans-serif;font-variant-numeric:tabular-nums;}.ds-ticket{position:relative;display:flex;flex-direction:column;width:188px;background:var(--color-stock);color:var(--color-ink);text-decoration:none;border-radius:4px;padding:12px 12px 10px;box-shadow:0 1px 2px rgb(17 17 17 / 0.12),0 1px 0 #b9bdc4;transition:transform 150ms;}.ds-ticket:hover{transform:translateY(-2px);}.ds-ticket:hover .ds-ticket-title{text-decoration:underline;}.ds-ticket:focus-visible{outline:2px solid var(--color-ink);outline-offset:2px;}.ds-sticker{position:absolute;right:-6px;top:-8px;transform:rotate(4deg);border-radius:3px;padding:4px 8px;font-family:'Barlow Condensed','Barlow',ui-sans-serif,sans-serif;font-weight:800;font-size:16px;line-height:1;}.ds-sticker-cut{background:var(--color-sticker);color:var(--color-ink);}.ds-sticker-rise{background:var(--color-ink);color:#fff;}.ds-ticket-title{min-height:34px;padding-right:32px;font-size:13px;font-weight:600;line-height:1.3;}.ds-ticket-store{margin-top:2px;font-size:11px;color:var(--color-ink-3);}.ds-ticket-was{margin-top:10px;font-size:12px;color:var(--color-ink-3);}.ds-ticket-price{font-family:'Barlow Condensed','Barlow',ui-sans-serif,sans-serif;font-weight:800;font-size:38px;line-height:1;color:var(--color-ink);}.ds-ticket-price.ds-cut{color:var(--color-cut);}"
+    },
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "Carbon action button, used to submit an analysis.",
+      "html": "<button class=\"ds-btn-primary\"><svg width=\"15\" height=\"15\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><polygon points=\"6 3 20 12 6 21 6 3\"/></svg>Analyse</button>",
+      "css": ":host{--color-ink:#111111;--color-ink-2:#464a52;--color-ink-3:#62666f;--color-shelf:#f4f5f7;--color-stock:#ffffff;--color-edge:#dadde2;--color-rail:#d9dce0;--color-sticker:#ffd60a;--color-cut:#d11b23;--color-ok:#1d6f40;--color-ok-soft:#e4f3ea;--color-warn:#8a5100;--color-warn-soft:#fff3d1;--color-info:#23479e;--color-info-soft:#e7edfb;}.ds-btn-primary{display:inline-flex;align-items:center;gap:6px;height:40px;padding:0 16px;border:0;border-radius:6px;background:var(--color-ink);color:#fff;font-family:'Barlow',ui-sans-serif,system-ui,sans-serif;font-variant-numeric:tabular-nums;font-size:14px;font-weight:600;cursor:pointer;transition:background-color 150ms;}.ds-btn-primary:hover{background:#2a2c30;}.ds-btn-primary:focus-visible{outline:2px solid var(--color-ink);outline-offset:2px;}.ds-btn-primary:disabled{background:#9a9da4;cursor:not-allowed;}"
+    },
+    {
+      "name": "Top Bar",
+      "kind": "nav",
+      "refersTo": "top-bar",
+      "description": "Sticky carbon bar: wordmark, two tabs with a yellow active underline, run status and the New analysis button.",
+      "html": "<header class=\"ds-bar\"><span class=\"ds-bar-brand\">Growth Briefs</span><nav class=\"ds-bar-nav\"><a href=\"#\" class=\"ds-tab ds-tab-active\" aria-current=\"page\">This week</a><a href=\"#\" class=\"ds-tab\">Briefs</a></nav><span class=\"ds-bar-right\"><span class=\"ds-bar-status\">Last brief Nov 13</span><button class=\"ds-btn-bar\"><svg width=\"14\" height=\"14\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\"><path d=\"M5 12h14M12 5v14\"/></svg>New analysis</button></span></header>",
+      "css": ":host{--color-ink:#111111;--color-ink-2:#464a52;--color-ink-3:#62666f;--color-shelf:#f4f5f7;--color-stock:#ffffff;--color-edge:#dadde2;--color-rail:#d9dce0;--color-sticker:#ffd60a;--color-cut:#d11b23;--color-ok:#1d6f40;--color-ok-soft:#e4f3ea;--color-warn:#8a5100;--color-warn-soft:#fff3d1;--color-info:#23479e;--color-info-soft:#e7edfb;}.ds-bar{display:flex;align-items:center;gap:40px;height:56px;padding:0 32px;background:var(--color-ink);color:#fff;font-family:'Barlow',ui-sans-serif,system-ui,sans-serif;font-variant-numeric:tabular-nums;}.ds-bar-brand{font-family:'Barlow Condensed','Barlow',ui-sans-serif,sans-serif;font-weight:800;font-size:22px;line-height:1;letter-spacing:-0.025em;}.ds-bar-nav{display:flex;align-self:stretch;}.ds-tab{display:flex;align-items:center;padding:3px 14px 0;border-bottom:3px solid transparent;color:#a8abb2;font-size:14px;text-decoration:none;transition:color 150ms;}.ds-tab:hover{color:#fff;}.ds-tab-active{border-bottom-color:var(--color-sticker);color:#fff;font-weight:600;}.ds-tab:focus-visible{outline:2px solid #fff;outline-offset:-4px;}.ds-bar-right{margin-left:auto;display:flex;align-items:center;gap:12px;}.ds-bar-status{font-size:13px;color:#a8abb2;}.ds-btn-bar{display:inline-flex;align-items:center;gap:6px;padding:6px 12px;border:0;border-radius:6px;background:#fff;color:var(--color-ink);font-family:'Barlow',ui-sans-serif,system-ui,sans-serif;font-variant-numeric:tabular-nums;font-size:13px;font-weight:600;cursor:pointer;transition:background-color 150ms;}.ds-btn-bar:hover{background:var(--color-sticker);}.ds-btn-bar:focus-visible{outline:2px solid #fff;outline-offset:2px;}"
+    },
+    {
+      "name": "Domain Input",
+      "kind": "input",
+      "refersTo": "input-text",
+      "description": "Text field for competitor domains, with help line that turns red on error.",
+      "html": "<label class=\"ds-field\"><span class=\"ds-field-label\">Competitor stores to analyse</span><input class=\"ds-input\" placeholder=\"store-one.com, store-two.com\"><span class=\"ds-field-help\">Up to 6 stores, separated by commas.</span></label>",
+      "css": ":host{--color-ink:#111111;--color-ink-2:#464a52;--color-ink-3:#62666f;--color-shelf:#f4f5f7;--color-stock:#ffffff;--color-edge:#dadde2;--color-rail:#d9dce0;--color-sticker:#ffd60a;--color-cut:#d11b23;--color-ok:#1d6f40;--color-ok-soft:#e4f3ea;--color-warn:#8a5100;--color-warn-soft:#fff3d1;--color-info:#23479e;--color-info-soft:#e7edfb;}.ds-field{display:flex;flex-direction:column;gap:8px;max-width:420px;font-family:'Barlow',ui-sans-serif,system-ui,sans-serif;font-variant-numeric:tabular-nums;color:var(--color-ink);}.ds-field-label{font-size:14px;font-weight:600;}.ds-input{height:40px;padding:0 12px;border:1px solid #c4c8cf;border-radius:6px;background:var(--color-stock);color:var(--color-ink);font:inherit;font-size:14px;outline:none;transition:border-color 150ms;}.ds-input::placeholder{color:var(--color-ink-3);}.ds-input:hover{border-color:var(--color-ink-3);}.ds-input:focus{border-color:var(--color-ink);}.ds-input:focus-visible{outline:2px solid var(--color-ink);outline-offset:2px;}.ds-input[aria-invalid]{border-color:var(--color-cut);}.ds-field-help{font-size:13px;color:var(--color-ink-3);}"
+    },
+    {
+      "name": "Status Tags",
+      "kind": "chip",
+      "refersTo": "tag-verified",
+      "description": "Read-only pill labels for per-store and audit status.",
+      "html": "<div class=\"ds-tags\"><span class=\"ds-tag ds-tag-ok\">Verified</span><span class=\"ds-tag ds-tag-info\">Baseline</span><span class=\"ds-tag ds-tag-warn\">Unverified</span></div>",
+      "css": ":host{--color-ink:#111111;--color-ink-2:#464a52;--color-ink-3:#62666f;--color-shelf:#f4f5f7;--color-stock:#ffffff;--color-edge:#dadde2;--color-rail:#d9dce0;--color-sticker:#ffd60a;--color-cut:#d11b23;--color-ok:#1d6f40;--color-ok-soft:#e4f3ea;--color-warn:#8a5100;--color-warn-soft:#fff3d1;--color-info:#23479e;--color-info-soft:#e7edfb;}.ds-tags{display:flex;gap:8px;font-family:'Barlow',ui-sans-serif,system-ui,sans-serif;font-variant-numeric:tabular-nums;}.ds-tag{display:inline-block;white-space:nowrap;border-radius:9999px;padding:4px 10px;font-size:11px;font-weight:600;line-height:1;}.ds-tag-ok{background:var(--color-ok-soft);color:var(--color-ok);}.ds-tag-info{background:var(--color-info-soft);color:var(--color-info);}.ds-tag-warn{background:var(--color-warn-soft);color:var(--color-warn);}"
+    },
+    {
+      "name": "What to Do Card",
+      "kind": "card",
+      "refersTo": "card",
+      "description": "Flat card-stock container with a 1px edge; shown with numbered yellow action markers.",
+      "html": "<section class=\"ds-card\"><h2 class=\"ds-card-title\">What to do</h2><ol class=\"ds-actions\"><li><span class=\"ds-marker\">1</span><span><strong>Monitor goodr.com</strong>: new items and significant price cuts.</span></li><li><span class=\"ds-marker\">2</span><span><strong>Review your pricing</strong> on the overlapping sunglasses range.</span></li></ol></section>",
+      "css": ":host{--color-ink:#111111;--color-ink-2:#464a52;--color-ink-3:#62666f;--color-shelf:#f4f5f7;--color-stock:#ffffff;--color-edge:#dadde2;--color-rail:#d9dce0;--color-sticker:#ffd60a;--color-cut:#d11b23;--color-ok:#1d6f40;--color-ok-soft:#e4f3ea;--color-warn:#8a5100;--color-warn-soft:#fff3d1;--color-info:#23479e;--color-info-soft:#e7edfb;}.ds-card{max-width:380px;background:var(--color-stock);border:1px solid var(--color-edge);border-radius:8px;padding:24px;color:var(--color-ink);font-family:'Barlow',ui-sans-serif,system-ui,sans-serif;font-variant-numeric:tabular-nums;}.ds-card-title{margin:0;font-family:'Barlow Condensed','Barlow',ui-sans-serif,sans-serif;font-weight:700;font-size:20px;}.ds-actions{list-style:none;margin:4px 0 0;padding:0;}.ds-actions li{display:flex;gap:12px;padding:14px 0;border-bottom:1px solid #eceef1;font-size:14px;line-height:1.625;color:var(--color-ink-2);}.ds-actions li:last-child{border-bottom:0;padding-bottom:0;}.ds-actions strong{color:var(--color-ink);font-weight:600;}.ds-marker{display:grid;place-items:center;flex-shrink:0;width:24px;height:24px;border-radius:3px;background:var(--color-sticker);color:var(--color-ink);font-family:'Barlow Condensed','Barlow',ui-sans-serif,sans-serif;font-weight:800;font-size:15px;}"
+    },
+    {
+      "name": "Movements Table",
+      "kind": "custom",
+      "refersTo": "card",
+      "description": "One row per store; uppercase 11px column labels, right-aligned tabular figures, cut percentages in red.",
+      "html": "<table class=\"ds-table\"><thead><tr><th>Competitor</th><th class=\"ds-num\">Price changes</th><th class=\"ds-num\">Biggest move</th><th class=\"ds-num\">Status</th></tr></thead><tbody><tr><td><a href=\"#\">goodr.com</a><div class=\"ds-sub\">429 products · Shopify</div></td><td class=\"ds-num\">2</td><td class=\"ds-num ds-cut\">-60%</td><td class=\"ds-num\"><span class=\"ds-tag\">Verified</span></td></tr><tr><td><a href=\"#\">magicspoon.com</a><div class=\"ds-sub\">140 products · Shopify</div></td><td class=\"ds-num\">0</td><td class=\"ds-num ds-dash\">—</td><td class=\"ds-num\"><span class=\"ds-tag\">Verified</span></td></tr></tbody></table>",
+      "css": ":host{--color-ink:#111111;--color-ink-2:#464a52;--color-ink-3:#62666f;--color-shelf:#f4f5f7;--color-stock:#ffffff;--color-edge:#dadde2;--color-rail:#d9dce0;--color-sticker:#ffd60a;--color-cut:#d11b23;--color-ok:#1d6f40;--color-ok-soft:#e4f3ea;--color-warn:#8a5100;--color-warn-soft:#fff3d1;--color-info:#23479e;--color-info-soft:#e7edfb;}.ds-table{width:100%;max-width:640px;border-collapse:separate;border-spacing:0;background:var(--color-stock);border:1px solid var(--color-edge);border-radius:8px;font-family:'Barlow',ui-sans-serif,system-ui,sans-serif;font-variant-numeric:tabular-nums;font-size:14px;color:var(--color-ink);}.ds-table th{padding:10px 16px;border-bottom:1px solid var(--color-edge);text-align:left;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.04em;color:var(--color-ink-3);}.ds-table td{padding:12px 16px;border-bottom:1px solid #eceef1;}.ds-table tbody tr:last-child td{border-bottom:0;}.ds-table tbody tr:hover{background:#fafafb;}.ds-table .ds-num{text-align:right;}.ds-table a{color:inherit;font-weight:600;text-decoration:none;}.ds-table a:hover{text-decoration:underline;}.ds-sub{margin-top:2px;font-size:12px;color:var(--color-ink-3);}.ds-cut{color:var(--color-cut);font-weight:600;}.ds-dash{color:var(--color-ink-3);}.ds-tag{display:inline-block;border-radius:9999px;padding:4px 10px;font-size:11px;font-weight:600;line-height:1;background:var(--color-ok-soft);color:var(--color-ok);}"
+    },
+    {
+      "name": "Trust Line",
+      "kind": "custom",
+      "description": "One quiet line with the audit verdict, linking to the audit.",
+      "html": "<a class=\"ds-trust\" href=\"#\"><svg width=\"14\" height=\"14\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"#1d6f40\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z\"/><path d=\"m9 12 2 2 4-4\"/></svg>Verified by Enkrypt AI · 3 of 3 stores checked · Audit</a>",
+      "css": ":host{--color-ink:#111111;--color-ink-2:#464a52;--color-ink-3:#62666f;--color-shelf:#f4f5f7;--color-stock:#ffffff;--color-edge:#dadde2;--color-rail:#d9dce0;--color-sticker:#ffd60a;--color-cut:#d11b23;--color-ok:#1d6f40;--color-ok-soft:#e4f3ea;--color-warn:#8a5100;--color-warn-soft:#fff3d1;--color-info:#23479e;--color-info-soft:#e7edfb;}.ds-trust{display:inline-flex;align-items:center;gap:6px;font-family:'Barlow',ui-sans-serif,system-ui,sans-serif;font-variant-numeric:tabular-nums;font-size:12px;color:var(--color-ink-2);text-decoration:none;}.ds-trust:hover{color:var(--color-ink);text-decoration:underline;}.ds-trust:focus-visible{outline:2px solid var(--color-ink);outline-offset:2px;border-radius:3px;}"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Shelf-Edge Ticket",
+    "overview": "**Creative North Star: \"The Shelf-Edge Ticket\"**\n\nA competitor's price change is a price ticket clipped to a supermarket shelf edge, and a cut wears a yellow markdown sticker. The evidence is the ticket itself, not a summary tile: white card-stock tickets hang on a grey shelf rail, each showing the old price struck through and the new price in big condensed figures. Everything around the tickets is quiet working paper: white cards on a pale shelf ground, carbon ink, and a carbon top bar.\n\nThe system is light and daylight-legible, built for a merchant reading next to their own store admin. Density is that of a working tool: tables over decorative cards, exact numbers everywhere, tabular figures throughout. Colour is information, never decoration: yellow means a cut (or a numbered action), red means a dropped price, and the green, amber and blue soft tags mean verification status. It rejects the category default of KPI tiles on a grey SaaS shell and the earlier dark zinc look.\n\nMotion is limited to 150ms state transitions (colour, opacity, a 2px ticket lift on hover). There is no entrance choreography, and reduced-motion collapses all transitions.",
+    "keyCharacteristics": [
+      "Price tickets on a grey rail are the unit for price changes everywhere (home and brief detail).",
+      "Barlow for UI and reading; Barlow Condensed 800 for week titles, prices and big numbers.",
+      "Tabular figures on the whole document.",
+      "Carbon top bar; white card stock with a 1px edge on a shelf-grey ground.",
+      "Yellow and red are reserved signals, not brand accents."
+    ],
+    "rules": [
+      {
+        "name": "The Sticker Means a Cut Rule",
+        "body": "Yellow appears only on real price cuts, the numbered action markers and the active-tab / hover affordances of the top bar. A price rise gets a carbon sticker. Yellow is never a decorative highlight, badge fill or section accent.",
+        "section": "colors"
+      },
+      {
+        "name": "The Red Is a Drop Rule",
+        "body": "Reduction red marks a lower price (and a form error). Never use it for warnings, failure states or emphasis; failures are amber.",
+        "section": "colors"
+      },
+      {
+        "name": "The Condensed Is for Numbers and Titles Rule",
+        "body": "Barlow Condensed carries prices, percentages on stickers, action numbers, week and section titles. Running text, table cells and labels stay in Barlow.",
+        "section": "typography"
+      },
+      {
+        "name": "The Tabular Rule",
+        "body": "Figures are tabular across the whole document so columns of prices and counts align.",
+        "section": "typography"
+      },
+      {
+        "name": "The Only Ticket Lifts Rule",
+        "body": "Containers are bordered, not shadowed. The ticket shadow belongs to tickets; giving it to cards turns every surface into evidence.",
+        "section": "elevation"
+      }
+    ],
+    "dos": [
+      "Do show every price change as a ticket on the grey rail, with the new price in Barlow Condensed 800 and the old price struck through.",
+      "Do put the yellow sticker only on real cuts; a rise gets the carbon sticker.",
+      "Do keep reduction red for lower prices and form errors, and use amber for failures and warnings.",
+      "Do keep cards flat with a 1px edge border; reserve the ticket shadow for tickets.",
+      "Do keep figures tabular and right-aligned in tables.",
+      "Do state empty and baseline states in one plain sentence on a shelf-grey inset.",
+      "Do keep transitions at 150ms on colour, opacity and the ticket lift, with no entrance animation."
+    ],
+    "donts": [
+      "Don't build KPI tiles or summary stat cards; the ticket and the table are the evidence.",
+      "Don't use yellow as a decorative highlight, section accent or badge fill.",
+      "Don't give cards, tables or tags the ticket shadow or any rotation.",
+      "Don't set running text, table cells or labels in Barlow Condensed.",
+      "Don't return to a dark theme shell; the system is light only."
+    ]
+  }
+}

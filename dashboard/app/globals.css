@@ -1,40 +1,80 @@
 @import "tailwindcss";
 @plugin "@tailwindcss/typography";
 
-:root {
-  --background: #09090b;
-  --foreground: #e4e4e7;
-}
+/*
+ * Shelf-edge world: white ticket stock on a pale shelf, carbon ink, a yellow
+ * markdown sticker that only ever marks a price cut (and numbered actions),
+ * reduction red only on price-drop figures. Light: merchants read this at a
+ * desk in daylight, next to their own store admin.
+ */
+@theme {
+  --color-shelf: #f4f5f7;
+  --color-stock: #ffffff;
+  --color-edge: #dadde2;
+  --color-rail: #d9dce0;
+  --color-ink: #111111;
+  --color-ink-2: #464a52;
+  --color-ink-3: #62666f;
+  --color-sticker: #ffd60a;
+  --color-sticker-ink: #3d3200;
+  --color-cut: #d11b23;
+  --color-ok: #1d6f40;
+  --color-ok-soft: #e4f3ea;
+  --color-warn: #8a5100;
+  --color-warn-soft: #fff3d1;
+  --color-info: #23479e;
+  --color-info-soft: #e7edfb;
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --font-sans: var(--font-barlow), ui-sans-serif, system-ui, sans-serif;
+  --font-cond: var(--font-barlow-condensed), var(--font-barlow), ui-sans-serif, sans-serif;
+
+  --shadow-ticket: 0 1px 2px rgb(17 17 17 / 0.12), 0 1px 0 #b9bdc4;
 }
 
 html {
-  color-scheme: dark;
+  color-scheme: light;
+  font-variant-numeric: tabular-nums;
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  background-image:
-    radial-gradient(60rem 40rem at 80% -10%, rgba(16, 185, 129, 0.08), transparent 60%),
-    radial-gradient(50rem 30rem at 0% 0%, rgba(59, 130, 246, 0.05), transparent 55%);
-  background-attachment: fixed;
+  background: var(--color-shelf);
+  color: var(--color-ink);
+  caret-color: var(--color-ink);
 }
 
-/* Tune the markdown prose to the dark theme */
+::selection {
+  background: var(--color-sticker);
+  color: var(--color-ink);
+}
+
+:focus-visible {
+  outline: 2px solid var(--color-ink);
+  outline-offset: 2px;
+  border-radius: 3px;
+}
+
+a {
+  text-underline-offset: 3px;
+}
+
+/* Markdown brief, set in the shelf palette. */
 .prose-brief {
-  --tw-prose-body: #d4d4d8;
-  --tw-prose-headings: #fafafa;
-  --tw-prose-bold: #fafafa;
-  --tw-prose-links: #34d399;
-  --tw-prose-bullets: #52525b;
-  --tw-prose-hr: #27272a;
-  --tw-prose-quotes: #a1a1aa;
-  --tw-prose-quote-borders: #10b981;
-  --tw-prose-code: #34d399;
+  --tw-prose-body: var(--color-ink-2);
+  --tw-prose-headings: var(--color-ink);
+  --tw-prose-bold: var(--color-ink);
+  --tw-prose-links: var(--color-ink);
+  --tw-prose-bullets: var(--color-ink-3);
+  --tw-prose-hr: var(--color-edge);
+  --tw-prose-quotes: var(--color-ink-2);
+  --tw-prose-quote-borders: var(--color-edge);
+  --tw-prose-code: var(--color-ink);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+  }
 }

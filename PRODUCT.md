@@ -20,16 +20,17 @@ Every brief is built from a deterministic catalog diff and checked by Enkrypt AI
 
 ## Operating Context
 
-- Weekly rhythm: one brief per run, labelled by week; a cron route exists (`dashboard/app/api/cron`). Runs can also be started by hand from the dashboard by entering competitor domains.
+- Rhythm: a merchant starts an analysis by entering up to 6 competitor domains; that set then gets a new brief about weekly for 28 days (see Capabilities). One brief per run, labelled by its snapshot date.
 - A run takes about 2 minutes; non-Shopify stores fall back to Firecrawl extraction, which is slower (several minutes) and best-effort.
 - Week-over-week trends show up in the brief when archived history exists.
 
 ## Capabilities and Constraints
 
 - Next.js 16 App Router + Tailwind v4 app in `dashboard/`; data comes from MongoDB through `dashboard/lib/server/*`.
-- Per competitor data: status (`verified`, `first_snapshot`/baseline, `unverified`), source (`shopify` | `firecrawl`), product count, new SKUs, price changes, title changes. The underlying diff also holds product-level detail (title, URL, old/new price, change %), but the brief API currently exposes only counts.
+- Per competitor data: status (`verified`, `first_snapshot`/baseline, `unverified`), source (`shopify` | `firecrawl`), product count, new SKUs, price changes, title changes. Each brief also stores the full diff with product-level detail (title, URL, old/new price, change %, closest existing product), which the brief page shows.
 - The brief body is generated Markdown with fixed sections: Executive Summary, Competitor Movements, Strategic Recommendations, an optional Week-over-Week Trends, and an appended Data Confidence section.
-- Limits: a merchant tracks at most 5 competitor stores (watchlist); `/api/run` accepts at most 6 per run.
+- Limits: one analysis covers at most 6 stores (`/api/run`).
+- Automatic tracking: every store set analysed from the dashboard is re-checked about weekly for 28 days after it was last run (running it again restarts the 28 days). A daily job re-checks the sets whose last brief is 7+ days old; a busy day can push a set to the next day, so the next check is "on or after" a date. There is no watchlist.
 - Compliance: recommendations must never suggest coordinating or fixing prices with competitors.
 
 ## Evidence on Hand

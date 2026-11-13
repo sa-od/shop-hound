@@ -1,108 +1,32 @@
-import Link from "next/link";
-import { ChevronRight, CalendarDays, Users, Inbox } from "lucide-react";
-import { briefTotals, type BriefSummary } from "@/lib/api";
-import { listRecentBriefs } from "@/lib/server/briefs-store";
-import { getStatus } from "@/lib/server/status";
-import { formatWeek } from "@/lib/utils";
-import { Header } from "./components/Header";
-import { VerifiedBadge, StatChip } from "./components/ui";
-import { RunAnalysis } from "./components/RunAnalysis";
+import { getLatestBrief } from "@/lib/server/briefs-store";
+import { BriefOverview } from "./components/BriefOverview";
+import { NewAnalysisForm } from "./components/NewAnalysisForm";
+import { Card } from "./components/shelf";
 
 export const dynamic = "force-dynamic";
 
-export default async function Home() {
-  const [briefs, status] = await Promise.all([listRecentBriefs(), getStatus()]);
+export default async function ThisWeek() {
+  const brief = await getLatestBrief();
 
   return (
-    <>
-      <Header status={status} />
-      <main className="mx-auto w-full max-w-5xl flex-1 px-5 py-8">
-        <div className="mb-6 flex items-start justify-between gap-4">
-          <div>
-            <h1 className="text-2xl font-semibold tracking-tight text-zinc-100">Weekly Growth Briefs</h1>
-            <p className="mt-1 text-sm text-zinc-400">
-              AI-generated competitor analysis — every brief fact-checked and safety-audited by Enkrypt AI before delivery.
-            </p>
-          </div>
-        </div>
-
-        <div className="mb-6">
-          <RunAnalysis />
-        </div>
-
-        {briefs.length === 0 ? (
-          <EmptyState />
-        ) : (
-          <ul className="space-y-4">
-            {briefs.map((b) => (
-              <BriefCard key={b.id} brief={b} />
-            ))}
-          </ul>
-        )}
-      </main>
-      <footer className="border-t border-zinc-800/80 px-5 py-6 text-center text-xs text-zinc-600">
-        Enkrypt AI · MongoDB Atlas · OpenAI · Vercel
-      </footer>
-    </>
+    <main className="mx-auto w-full max-w-[1280px] flex-1 px-4 py-6 sm:px-8 sm:py-8">
+      {brief ? <BriefOverview brief={brief} linkToFull /> : <FirstUse />}
+    </main>
   );
 }
 
-function BriefCard({ brief }: { brief: BriefSummary }) {
-  const totals = briefTotals(brief);
-  const unverified = brief.competitors.filter((c) => c.status === "unverified").length;
+function FirstUse() {
   return (
-    <li>
-      <Link
-        href={`/briefs/${brief.id}`}
-        className="group block rounded-xl border border-zinc-800 bg-zinc-900/50 p-5 transition hover:border-zinc-700 hover:bg-zinc-900"
-      >
-        <div className="flex items-start justify-between gap-4">
-          <div>
-            <div className="flex items-center gap-2 text-zinc-100">
-              <CalendarDays size={16} className="text-zinc-500" />
-              <span className="text-lg font-semibold">{formatWeek(brief.weekOf)}</span>
-            </div>
-            <div className="mt-1 flex items-center gap-3 text-xs text-zinc-500">
-              <span className="inline-flex items-center gap-1">
-                <Users size={13} /> {brief.competitors.length} competitor{brief.competitors.length !== 1 ? "s" : ""}
-              </span>
-              {unverified > 0 && <span className="text-amber-400/80">{unverified} unverified</span>}
-            </div>
-          </div>
-          <VerifiedBadge green={brief.greenLight} />
-        </div>
-
-        <div className="mt-3 flex flex-wrap items-center gap-1.5">
-          {brief.competitors.map((c) => (
-            <span
-              key={c.competitor}
-              className="inline-flex items-center rounded-md border border-zinc-800 bg-zinc-950/60 px-2 py-0.5 font-mono text-xs text-zinc-300"
-            >
-              {c.competitor}
-            </span>
-          ))}
-        </div>
-
-        <div className="mt-4 flex flex-wrap items-center gap-2">
-          <StatChip kind="price" value={totals.priceChanges} />
-          <StatChip kind="new" value={totals.newSkus} />
-          <StatChip kind="title" value={totals.titleChanges} />
-          <ChevronRight
-            size={18}
-            className="ml-auto text-zinc-600 transition group-hover:translate-x-0.5 group-hover:text-zinc-400"
-          />
-        </div>
-      </Link>
-    </li>
-  );
-}
-
-function EmptyState() {
-  return (
-    <div className="rounded-xl border border-dashed border-zinc-800 bg-zinc-900/30 px-6 py-16 text-center">
-      <Inbox size={28} className="mx-auto text-zinc-600" />
-      <p className="mt-3 text-sm text-zinc-400">No briefs yet.</p>
-      <p className="mt-1 text-xs text-zinc-600">Start a new analysis above to generate this week&apos;s brief.</p>
-    </div>
+    <Card className="mx-auto max-w-2xl">
+      <h1 className="font-cond text-[32px] font-extrabold leading-tight tracking-tight">See what your competitors changed</h1>
+      <p className="mt-2 max-w-[60ch] text-base leading-relaxed text-ink-2">
+        Enter up to 6 competitor stores. The analysis reads their catalogs and writes a brief: what changed (prices, new and removed
+        products, renames) and what to do about it. The first run saves each catalog as a baseline; after that the set is re-checked
+        automatically every week for 28 days, each time with a new brief.
+      </p>
+      <div className="mt-6">
+        <NewAnalysisForm autoFocus />
+      </div>
+    </Card>
   );
 }

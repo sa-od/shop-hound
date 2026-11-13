@@ -34,6 +34,8 @@ export interface BriefSummary {
 
 export interface BriefDetail extends BriefSummary {
   briefMarkdown: string;
+  /** The deterministic diff the brief was written from: product-level proof. */
+  diff: StructuredDiff | null;
 }
 
 interface BriefDoc {
@@ -80,15 +82,26 @@ export async function saveBrief(brief: Omit<BriefDoc, '_id' | 'createdAt'>): Pro
   return doc._id.toHexString();
 }
 
-/** Newest briefs first, without the heavy markdown/diff. */
-export async function listRecentBriefs(limit = 50): Promise<BriefSummary[]> {
+/** Newest briefs first, without the heavy markdown/diff; removed-product totals are counted in the database. */
+export async function listRecentBriefs(limit = 50): Promise<(BriefSummary & { removedTotal: number })[]> {
   const docs = await db()
     .collection<BriefDoc>(BRIEFS)
-    .find({}, { projection: SUMMARY_PROJECTION })
-    .sort({ createdAt: -1 })
-    .limit(limit)
+    .aggregate<Omit<BriefDoc, 'briefMarkdown' | 'diff'> & { removedTotal: number }>([
+      { $sort: { createdAt: -1 } },
+      { $limit: limit },
+      {
+        $addFields: {
+          removedTotal: {
+            $sum: {
+              $map: { input: { $ifNull: ['$diff.diffs', []] }, as: 'd', in: { $size: { $ifNull: ['$$d.removedSkus', []] } } },
+            },
+          },
+        },
+      },
+      { $project: SUMMARY_PROJECTION },
+    ])
     .toArray();
-  return docs.map(toSummary);
+  return docs.map(d => ({ ...toSummary(d), removedTotal: d.removedTotal }));
 }
 
 /** Recent briefs covering any of the given competitors — trend context for the agent. */
@@ -106,7 +119,13 @@ export async function getBrief(id: string): Promise<BriefDetail | null> {
   if (!ObjectId.isValid(id)) return null;
   const d = await db().collection<BriefDoc>(BRIEFS).findOne({ _id: new ObjectId(id) });
   if (!d) return null;
-  return { ...toSummary(d), briefMarkdown: d.briefMarkdown };
+  return { ...toSummary(d), briefMarkdown: d.briefMarkdown, diff: d.diff ?? null };
+}
+
+/** The newest brief, in full — the home page's "This week". */
+export async function getLatestBrief(): Promise<BriefDetail | null> {
+  const d = await db().collection<BriefDoc>(BRIEFS).find({}).sort({ createdAt: -1 }).limit(1).next();
+  return d ? { ...toSummary(d), briefMarkdown: d.briefMarkdown, diff: d.diff ?? null } : null;
 }
 
 export async function countBriefs(): Promise<number> {
