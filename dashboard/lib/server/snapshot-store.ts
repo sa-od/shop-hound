@@ -139,3 +139,17 @@ export async function findClosestProduct(
   const cosine = 2 * hit.score - 1;
   return { title: hit.title, price: hit.price, similarity: Math.round(cosine * 100) / 100 };
 }
+
+/** Date and size of a store's latest snapshot, without loading its products. */
+export async function getLatestSnapshotInfo(competitor: string): Promise<{ snapshotDate: string; productCount: number } | null> {
+  const [doc] = await db()
+    .collection<SnapshotDoc>(SNAPSHOTS)
+    .aggregate<{ snapshotDate: string; productCount: number }>([
+      { $match: { competitor } },
+      { $sort: { snapshotDate: -1 } },
+      { $limit: 1 },
+      { $project: { _id: 0, snapshotDate: 1, productCount: { $size: { $ifNull: ['$products', []] } } } },
+    ])
+    .toArray();
+  return doc ?? null;
+}

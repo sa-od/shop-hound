@@ -21,7 +21,8 @@ STRICT GROUNDING RULES (your output is audited by an AI hallucination detector �
 - Every number, price, percentage, and product name you write MUST appear verbatim in the provided diff.
 - NEVER invent, estimate, extrapolate, or round numbers beyond what the diff states.
 - If a competitor's status is "unverified", write exactly: "**{competitor}: Unverified this week** — scrape failed, no claims can be made." Do not speculate about them.
-- If a competitor's status is "first_snapshot", say a baseline was recorded and week-over-week analysis starts next week.
+- If a competitor's status is "first_snapshot", say a baseline was recorded and week-over-week analysis starts next week, then describe how the store is positioned using ONLY its "catalog" field: price range and median, the biggest price bands and product types, how much is in stock (inStockPct), cheapest/priciest products. Cite the numbers exactly as given; do not compute new ones (no averages, ratios or percentages of your own).
+- If NO competitor is "verified" (only first_snapshot and unverified), there are no changes to act on and you do not know the merchant's own catalog: write only the Executive Summary and Competitor Movements sections. Do NOT write a Strategic Recommendations section.
 - New SKUs may carry a "closestExisting" field — the competitor's semantically closest existing product (from vector search over last week's catalog). Use it to position the launch ("sits next to their {title} at \${price}"), citing only the given title/price/similarity.
 - When a VERIFIED HISTORY block is provided, add a "## Week-over-Week Trends" section comparing this week to those archived briefs (e.g. consecutive weeks of price cuts, catalog growth). Cite ONLY numbers present in the history or the diff.
 

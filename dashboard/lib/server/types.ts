@@ -60,6 +60,26 @@ export const skuSummarySchema = z.object({
     .optional(),
 });
 
+const namedCountSchema = z.object({ name: z.string(), count: z.number() });
+const productRefSchema = z.object({ title: z.string(), price: z.number(), url: z.string() });
+
+/** What a store's catalogue looked like when it was read (see catalog.ts). */
+export const catalogSummarySchema = z.object({
+  productCount: z.number(),
+  currency: z.string(),
+  price: z.object({ min: z.number(), median: z.number(), max: z.number() }), // product.price = lowest variant price
+  priceBands: z.array(z.object({ label: z.string(), min: z.number().nullable(), max: z.number().nullable(), count: z.number() })), // [min, max)
+  inStock: z.number(),
+  soldOut: z.number(),
+  inStockPct: z.number(), // whole percent, so the brief can cite it
+  productTypes: z.array(namedCountSchema), // top 6; "" → "Uncategorised"
+  vendors: z.array(namedCountSchema), // top 5
+  avgVariants: z.number(), // one decimal
+  cheapest: z.array(productRefSchema), // 3, cheapest first
+  priciest: z.array(productRefSchema), // 3, priciest first
+});
+export type CatalogSummary = z.infer<typeof catalogSummarySchema>;
+
 export const competitorDiffSchema = z.object({
   competitor: z.string(),
   status: z.enum(['verified', 'unverified', 'first_snapshot']),
@@ -71,6 +91,10 @@ export const competitorDiffSchema = z.object({
   removedSkus: z.array(skuSummarySchema),
   priceChanges: z.array(priceChangeSchema),
   titleChanges: z.array(titleChangeSchema),
+  /** Stores that were read (first_snapshot, verified): today's catalogue. */
+  catalog: catalogSummarySchema.optional(),
+  /** Unverified stores read on an earlier check: the latest snapshot we have. */
+  lastKnown: z.object({ snapshotDate: z.string(), productCount: z.number() }).optional(),
 });
 export type CompetitorDiff = z.infer<typeof competitorDiffSchema>;
 

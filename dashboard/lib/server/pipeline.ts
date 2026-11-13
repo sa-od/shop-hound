@@ -1,7 +1,8 @@
 import { type CompetitorSnapshot, type CompetitorDiff, type StructuredDiff, type GuardrailVerdict } from './types';
 import { scrapeCatalog, normalizeDomain, msUntil } from './scraper';
 import { embedProducts } from './embeddings';
-import { saveSnapshot, getPreviousSnapshot } from './snapshot-store';
+import { saveSnapshot, getPreviousSnapshot, getLatestSnapshotInfo } from './snapshot-store';
+import { summarizeCatalog } from './catalog';
 import { diffSnapshots, verifyDiffAgainstPayload } from './diff-engine';
 import { groundingCheck, safetyAudit, maskCompetitorDomains } from './enkrypt';
 import { briefsForCompetitors, saveBrief } from './briefs-store';
@@ -113,10 +114,13 @@ export async function runAnalysis(opts: RunOptions): Promise<RunResult> {
     const previous = previousByCompetitor.get(snapshot.competitor) ?? null;
     const diff = await diffSnapshots(snapshot, previous, vectorsByCompetitor.get(snapshot.competitor) ?? new Map());
     groundingErrors.push(...verifyDiffAgainstPayload(diff, snapshot, previous));
-    diffs.push({ ...diff, source: snapshot.source ?? 'shopify' });
+    diffs.push({ ...diff, source: snapshot.source ?? 'shopify', catalog: summarizeCatalog(snapshot.products) });
   }
   for (const competitor of unverified) {
+    // Today's failed read saved nothing, so the latest snapshot is an earlier check.
+    const lastKnown = await getLatestSnapshotInfo(competitor).catch(() => null);
     diffs.push({
+      ...(lastKnown ? { lastKnown } : {}),
       competitor,
       status: 'unverified',
       previousSnapshotDate: null,
@@ -250,6 +254,7 @@ export async function runAnalysis(opts: RunOptions): Promise<RunResult> {
       priceChanges: c.priceChanges.length,
       titleChanges: c.titleChanges.length,
       ...(unverifiedReasons[c.competitor] ? { reason: unverifiedReasons[c.competitor] } : {}),
+      ...(c.lastKnown ? { lastKnown: c.lastKnown } : {}),
     })),
     grounding: { greenLight: grounding.greenLight, violations: grounding.violations },
     safety: {

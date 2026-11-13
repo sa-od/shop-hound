@@ -249,6 +249,12 @@ function productFacts(diffContext: string): ProductFacts[] {
         }
       }
     }
+    // A store's catalogue summary names its cheapest and priciest products.
+    for (const item of [...(d.catalog?.cheapest ?? []), ...(d.catalog?.priciest ?? [])]) {
+      if (typeof item?.title === 'string' && item.title.trim() && typeof item.price === 'number') {
+        facts.push({ title: item.title, numbers: new Set([Math.abs(item.price)]) });
+      }
+    }
   }
   return facts;
 }

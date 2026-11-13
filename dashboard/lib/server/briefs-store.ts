@@ -13,6 +13,7 @@ export interface CompetitorSummary {
   priceChanges: number;
   titleChanges: number;
   reason?: string; // why a competitor is unverified, when known
+  lastKnown?: { snapshotDate: string; productCount: number }; // unverified, but read on an earlier check
 }
 
 export interface Verdict {
