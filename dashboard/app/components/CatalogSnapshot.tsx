@@ -15,7 +15,7 @@ export function CatalogSnapshot({ catalog: c }: { catalog: CatalogSummary }) {
       value: c.productCount.toLocaleString(),
       note: c.avgVariants ? `${c.avgVariants.toFixed(1)} variants each on average` : null,
     },
-    { label: "Price range", value: `${m(c.price.min)}–${m(c.price.max)}`, note: "Lowest variant price" },
+    { label: "Price range", value: `${m(c.price.min)}–${m(c.price.max)}`, note: "Each product at its lowest variant price" },
     { label: "Median price", value: m(c.price.median), note: null },
     {
       label: "In stock",
@@ -47,8 +47,8 @@ export function CatalogSnapshot({ catalog: c }: { catalog: CatalogSummary }) {
 
       {(c.cheapest.length > 0 || c.priciest.length > 0) && (
         <div className="mt-5 grid gap-x-10 gap-y-5 sm:grid-cols-2">
-          <Products title="Cheapest" items={c.cheapest} money={m} />
-          <Products title="Priciest" items={c.priciest} money={m} />
+          <Products title="Lowest-priced items" items={c.cheapest} money={m} />
+          <Products title="Highest-priced items" items={c.priciest} money={m} />
         </div>
       )}
     </div>
