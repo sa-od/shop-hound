@@ -25,17 +25,35 @@ function apiKey(): string | undefined {
   return process.env.ENKRYPT_API_KEY;
 }
 
+// Enkrypt's detectors intermittently 5xx (observed: /guardrails/detect → 503
+// with `"bias": null` in the body, then 200 on the next identical call).
+// Retry fast server errors only — never timeouts, which would multiply the
+// run's worst case against the 300s function limit. Exhausted retries still
+// throw, and callers fail closed.
+const SERVER_ERROR_RETRIES = 2;
+// Endpoints that answer 503 by design until the vendor ships them — retrying is pointless.
+const NOT_YET_RELEASED = ['/guardrails/hallucination'];
+
 async function enkryptPost<T>(path: string, body: unknown, extraHeaders?: Record<string, string>): Promise<T> {
-  const res = await fetch(`${ENKRYPT_BASE_URL}${path}`, {
-    method: 'POST',
-    headers: { apikey: apiKey()!, 'Content-Type': 'application/json', ...extraHeaders },
-    body: JSON.stringify(body),
-    signal: AbortSignal.timeout(30_000),
-  });
-  if (!res.ok) {
-    throw new Error(`Enkrypt ${path} failed: ${res.status} ${await res.text()}`);
+  const retries = NOT_YET_RELEASED.includes(path) ? 0 : SERVER_ERROR_RETRIES;
+  for (let attempt = 0; ; attempt++) {
+    const res = await fetch(`${ENKRYPT_BASE_URL}${path}`, {
+      method: 'POST',
+      headers: { apikey: apiKey()!, 'Content-Type': 'application/json', ...extraHeaders },
+      body: JSON.stringify(body),
+      signal: AbortSignal.timeout(30_000),
+    });
+    if (res.ok) return (await res.json()) as T;
+    const text = await res.text();
+    // 429 = per-second rate limit ("Second Rate limit exceeded"): waiting a
+    // moment is exactly the fix.
+    if ((res.status >= 500 || res.status === 429) && attempt < retries) {
+      console.warn(`[enkrypt] ${path} → ${res.status}, retrying (${attempt + 1}/${retries})`);
+      await new Promise(r => setTimeout(r, 1_200 * (attempt + 1)));
+      continue;
+    }
+    throw new Error(`Enkrypt ${path} failed: ${res.status} ${text}`);
   }
-  return (await res.json()) as T;
 }
 
 // Managed guardrails policy on the Enkrypt platform (created via
@@ -222,6 +240,13 @@ function productFacts(diffContext: string): ProductFacts[] {
         for (const t of [item.title, item.oldTitle, item.newTitle]) {
           if (typeof t === 'string' && t.trim()) facts.push({ title: t, numbers });
         }
+        // A new SKU's closest existing product is a product the brief may name
+        // in its own sentence ("…sits next to their {title} at ${price}"), so
+        // it is a fact in its own right, carrying its own price.
+        const closest = item.closestExisting;
+        if (closest && typeof closest.title === 'string' && closest.title.trim() && typeof closest.price === 'number') {
+          facts.push({ title: closest.title, numbers: new Set([Math.abs(closest.price)]) });
+        }
       }
     }
   }
@@ -289,6 +314,55 @@ export function verifyProductGrounding(brief: string, diffContext: string): stri
   return violations;
 }
 
+const BIAS_CHUNK_CHARS = 900;
+
+/** Split markdown at headings / blank lines into chunks of at most ~BIAS_CHUNK_CHARS. */
+export function chunkForDetection(text: string, max = BIAS_CHUNK_CHARS): string[] {
+  const chunks: string[] = [];
+  let cur = '';
+  for (const para of text.split(/\n(?=#)|\n\s*\n/)) {
+    if (!para.trim()) continue;
+    if (cur && cur.length + para.length + 1 > max) {
+      chunks.push(cur);
+      cur = '';
+    }
+    // A single oversized paragraph is split hard rather than sent whole.
+    for (let i = 0; i < para.length; i += max) {
+      const piece = para.slice(i, i + max);
+      if (cur && cur.length + piece.length + 1 > max) {
+        chunks.push(cur);
+        cur = piece;
+      } else {
+        cur = cur ? `${cur}\n${piece}` : piece;
+      }
+    }
+  }
+  if (cur) chunks.push(cur);
+  return chunks;
+}
+
+/**
+ * Run the bias detector chunk by chunk; returns the chunks it flagged. Throws
+ * if a chunk can't be checked. Sequential on purpose: Enkrypt enforces a
+ * per-second rate limit, and the main detect call runs alongside this.
+ */
+async function detectBiasByChunk(text: string): Promise<string[]> {
+  const chunks = chunkForDetection(text);
+  const flagged: string[] = [];
+  for (const [i, chunk] of chunks.entries()) {
+    const res = await enkryptPost<DetectResponse>('/guardrails/detect', {
+      text: chunk,
+      detectors: { bias: { enabled: true } },
+    });
+    const bias = (res.summary as { bias?: number | null }).bias;
+    if (bias === null || bias === undefined) {
+      throw new Error(`bias detector returned no verdict for chunk ${i + 1}/${chunks.length}`);
+    }
+    if (bias) flagged.push(chunk);
+  }
+  return flagged;
+}
+
 // The instruction the reasoning agent answers — the hallucination endpoint
 // judges the brief against it.
 const BRIEF_INSTRUCTION =
@@ -301,8 +375,37 @@ const BRIEF_INSTRUCTION =
  *  2. Content detectors — bias, toxicity, nsfw, PII leakage, and policy
  *     violations (price-fixing, ToS) against the custom compliance policy.
  */
+/**
+ * Enkrypt's PII detector tags bare domain names as emails — reproduced:
+ * "Verified: goodr.com (vs 2026-11-06)" → email "goodr.com", while
+ * "Competitors: goodr.com, magicspoon.com." → no PII. Competitor domains are
+ * in every brief, so the false positive would fail audits at random.
+ *
+ * So the text sent to Enkrypt replaces each competitor domain with a neutral
+ * name — but never when it follows "@", so a real address (sales@goodr.com)
+ * reaches the detector intact and is still caught. The deterministic
+ * grounding checks keep reading the original brief.
+ */
+export function maskCompetitorDomains(text: string, diffContext: string): string {
+  let competitors: string[] = [];
+  try {
+    competitors = (JSON.parse(diffContext).diffs ?? []).map((d: { competitor: string }) => d.competitor);
+  } catch {
+    return text;
+  }
+  // Longest first so "shop.example.com" is masked before "example.com".
+  competitors.sort((a, b) => b.length - a.length);
+  let masked = text;
+  competitors.forEach(domain => {
+    const escaped = domain.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    masked = masked.replace(new RegExp(`(?<![@\\w.-])${escaped}(?![\\w-])`, 'gi'), `Competitor ${String.fromCharCode(65 + competitors.indexOf(domain))}`);
+  });
+  return masked;
+}
+
 export async function safetyAudit(brief: string, diffContext: string): Promise<GuardrailVerdict> {
   if (!apiKey()) return disabledVerdict('safety');
+  const enkryptText = maskCompetitorDomains(brief, diffContext).slice(0, 30_000);
 
   const hallucinationPromise: Promise<HallucinationResponse | null> = enkryptPost<HallucinationResponse>(
     '/guardrails/hallucination',
@@ -321,15 +424,21 @@ export async function safetyAudit(brief: string, diffContext: string): Promise<G
   // briefs); `adherence` worked in July 2026 but was later REMOVED upstream
   // ("Unknown detector(s): adherence") and crashed the pipeline for weeks —
   // deterministic numeric grounding remains the always-on grounding audit.
+  //
+  // `bias` runs separately, per chunk: on a whole brief it 503s with
+  // `"bias": null` for certain passages (reproduced on a 2.5k-char brief:
+  // first 500 chars → 200, 1000 → 503, 1500 → 200, 2000 → 503), while every
+  // paragraph-sized chunk of the same text answers 200. Chunking keeps the
+  // check's full coverage; a chunk that still fails throws → fail closed.
   let hallucination: HallucinationResponse | null;
   let detect: DetectResponse;
+  let biasedChunks: string[];
   try {
-    [hallucination, detect] = await Promise.all([
+    [hallucination, detect, biasedChunks] = await Promise.all([
       hallucinationPromise,
       enkryptPost<DetectResponse>('/guardrails/detect', {
-        text: brief.slice(0, 30_000),
+        text: enkryptText,
         detectors: {
-          bias: { enabled: true },
           toxicity: { enabled: true },
           nsfw: { enabled: true },
           pii: { enabled: true, entities: OUTPUT_PII_ENTITIES },
@@ -340,6 +449,7 @@ export async function safetyAudit(brief: string, diffContext: string): Promise<G
           },
         },
       }),
+      detectBiasByChunk(enkryptText),
     ]);
   } catch (err) {
     // FAIL CLOSED, don't kill the run: the brief persists as not-green with an
@@ -372,17 +482,22 @@ export async function safetyAudit(brief: string, diffContext: string): Promise<G
   violations.push(...verifyProductGrounding(brief, diffContext));
 
   const s = detect.summary as {
-    bias?: number;
     policy_violation?: number;
     toxicity?: unknown[];
     nsfw?: number;
     pii?: number;
   };
   const d = detect.details as any;
-  if (s.bias) {
-    violations.push(`biased framing detected${d?.bias?.biased_text ? `: "${d.bias.biased_text}"` : ''}`);
-    flagged.push('bias');
-  }
+  // Bias is a WARNING, not a blocker: the detector false-flags neutral advice
+  // reproducibly (e.g. "Consider exploring themes similar to {competitor}'s
+  // new product launches…" → bias=1 on every call). It is recorded and shown
+  // on the audit panel, but does not withhold the green light. Injection,
+  // policy, toxicity, nsfw, PII and grounding remain blocking.
+  const warnings = biasedChunks.map(chunk => {
+    const excerpt = chunk.replace(/\s+/g, ' ').trim();
+    return `possible biased framing (non-blocking): "${excerpt.length > 160 ? `${excerpt.slice(0, 160)}…` : excerpt}"`;
+  });
+  if (biasedChunks.length > 0) flagged.push('bias');
   if (s.policy_violation) {
     violations.push(`policy violation${d?.policy_violation?.explanation ? `: ${d.policy_violation.explanation}` : ''}`);
     flagged.push('policy_violation');
@@ -406,6 +521,7 @@ export async function safetyAudit(brief: string, diffContext: string): Promise<G
     greenLight: violations.length === 0,
     enkryptEnabled: true,
     violations,
+    warnings,
     detail: {
       groundingMethod: hallucination
         ? 'enkrypt-hallucination + deterministic numeric/product grounding'

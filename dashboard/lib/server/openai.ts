@@ -15,15 +15,12 @@ export const OPENAI_EMBEDDING_MODEL =
 
 /**
  * Pinned to 1024 — deliberately NOT text-embedding-3-small's native 1536.
+ * OpenAI's v3 models support shortening via the `dimensions` parameter with
+ * little quality loss; 1024 keeps each stored product vector at 4KB.
  *
- * A Qdrant collection's vector width is fixed at creation, and all three of
- * ours were created at 1024 (the old Qwen3-Embedding-0.6B width). OpenAI's v3
- * embedding models support shortening via the `dimensions` request parameter,
- * so pinning here lets the existing collections keep working — which preserves
- * `snapshot_records` (whose payload holds the week-over-week diff baselines)
- * and the `growth_briefs` archive that feeds the trends section.
- *
- * Changing this number means recreating every collection and losing both.
+ * The Atlas Vector Search index declares this width (scripts/db-setup.ts), so
+ * changing it means dropping the product_vectors collection and re-creating
+ * the index. Snapshots and briefs are unaffected — only vectors are.
  */
 export const EMBEDDING_DIMENSIONS = 1024;
 

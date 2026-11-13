@@ -132,7 +132,12 @@ function handleFromUrl(url: string): string {
  * Throws if nothing usable comes back — the caller decides the competitor's
  * fate (unverified).
  */
-export async function extractCatalogWithFirecrawl(host: string): Promise<NormalizedProduct[]> {
+export async function extractCatalogWithFirecrawl(host: string, deadlineAt?: number): Promise<NormalizedProduct[]> {
+  // Map + batch each take a Firecrawl round-trip; refuse to start when the
+  // run's remaining budget cannot plausibly cover them.
+  if (deadlineAt !== undefined && deadlineAt - Date.now() < 30_000) {
+    throw new Error('time budget exhausted before Firecrawl extraction');
+  }
   // 1. Discover the site's URLs
   const mapped = await firecrawlFetch('/map', {
     method: 'POST',
@@ -163,10 +168,12 @@ export async function extractCatalogWithFirecrawl(host: string): Promise<Normali
   }
 
   // 4. Poll the batch job until it settles
-  const deadline = Date.now() + POLL_TIMEOUT_MS;
+  // Poll until Firecrawl's own cap or the run's deadline, whichever is sooner
+  // (a few seconds are held back so the caller can still record the outcome).
+  const deadline = Math.min(Date.now() + POLL_TIMEOUT_MS, deadlineAt === undefined ? Infinity : deadlineAt - 5_000);
   let results: Array<{ json?: { products?: ExtractedProduct[] } }> = [];
   for (;;) {
-    if (Date.now() > deadline) throw new Error(`Firecrawl batch ${batch.id} timed out after ${POLL_TIMEOUT_MS / 1000}s`);
+    if (Date.now() > deadline) throw new Error(`Firecrawl batch ${batch.id} timed out (poll budget exhausted)`);
     await new Promise(r => setTimeout(r, POLL_INTERVAL_MS));
     const status = await firecrawlFetch(`/batch/scrape/${batch.id}`);
     if (status.status === 'completed') {

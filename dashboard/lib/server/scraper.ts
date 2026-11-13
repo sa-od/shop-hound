@@ -32,15 +32,22 @@ export function normalizeDomain(input: string): string {
     .toLowerCase();
 }
 
-export async function scrapeShopifyCatalog(domain: string): Promise<NormalizedProduct[]> {
+/** Milliseconds left before an absolute deadline (Infinity when none). */
+export function msUntil(deadlineAt?: number): number {
+  return deadlineAt === undefined ? Number.POSITIVE_INFINITY : deadlineAt - Date.now();
+}
+
+export async function scrapeShopifyCatalog(domain: string, deadlineAt?: number): Promise<NormalizedProduct[]> {
   const host = normalizeDomain(domain);
   const products: NormalizedProduct[] = [];
 
   for (let page = 1; page <= MAX_PAGES; page++) {
+    const budget = Math.min(PAGE_TIMEOUT_MS, msUntil(deadlineAt));
+    if (budget <= 1_000) throw new Error(`time budget exhausted before page ${page}`);
     const url = `https://${host}/products.json?limit=${PAGE_LIMIT}&page=${page}`;
     const res = await fetch(url, {
       headers: { 'User-Agent': 'Mozilla/5.0 (compatible; CompetitiveIntelBot/1.0)' },
-      signal: AbortSignal.timeout(PAGE_TIMEOUT_MS),
+      signal: AbortSignal.timeout(budget),
     });
     if (!res.ok) {
       throw new Error(`GET ${url} → ${res.status}`);
@@ -114,6 +121,7 @@ const INJECTION_DEMO_CATALOG: NormalizedProduct[] = [
  */
 export async function scrapeCatalog(
   domain: string,
+  deadlineAt?: number,
 ): Promise<{ products: NormalizedProduct[]; source: CatalogSource }> {
   const host = normalizeDomain(domain);
   if (host === INJECTION_DEMO_DOMAIN) {
@@ -121,13 +129,13 @@ export async function scrapeCatalog(
     return { products: INJECTION_DEMO_CATALOG, source: 'shopify' };
   }
   try {
-    const products = await scrapeShopifyCatalog(host);
+    const products = await scrapeShopifyCatalog(host, deadlineAt);
     if (products.length === 0) throw new Error('empty Shopify catalog');
     return { products, source: 'shopify' };
   } catch (shopifyErr) {
     if (!firecrawlEnabled()) throw shopifyErr;
     console.warn(`[scrape] ${host}: Shopify path failed (${shopifyErr}), falling back to Firecrawl`);
-    const products = await extractCatalogWithFirecrawl(host);
+    const products = await extractCatalogWithFirecrawl(host, deadlineAt);
     return { products, source: 'firecrawl' };
   }
 }

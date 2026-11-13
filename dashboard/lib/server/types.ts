@@ -30,6 +30,8 @@ export type CompetitorSnapshot = z.infer<typeof competitorSnapshotSchema>;
 
 export const priceChangeSchema = z.object({
   productId: z.string(),
+  // Set when matched to last week's product under a different id (handle match)
+  previousProductId: z.string().optional(),
   title: z.string(),
   url: z.string(),
   oldPrice: z.number(),
@@ -39,10 +41,10 @@ export const priceChangeSchema = z.object({
 
 export const titleChangeSchema = z.object({
   productId: z.string(),
+  previousProductId: z.string().optional(),
   url: z.string(),
   oldTitle: z.string(),
   newTitle: z.string(),
-  similarity: z.number().optional(), // cosine score when matched semantically
 });
 
 export const skuSummarySchema = z.object({
@@ -51,8 +53,8 @@ export const skuSummarySchema = z.object({
   price: z.number(),
   url: z.string(),
   // For NEW SKUs: the competitor's semantically closest existing product
-  // (Qdrant nearest-neighbor below the same-product threshold) — positions the
-  // launch inside their own catalog ("sits next to their Aviator line").
+  // (vector search over last week's catalog) — positions the launch inside
+  // their own catalog ("sits next to their Aviator line").
   closestExisting: z
     .object({ title: z.string(), price: z.number(), similarity: z.number() })
     .optional(),
@@ -76,6 +78,9 @@ export const structuredDiffSchema = z.object({
   weekOf: z.string(),
   diffs: z.array(competitorDiffSchema),
   unverified: z.array(z.string()), // competitors whose scrape failed this week
+  // Why each unverified competitor failed (scrape error, time budget, ...) —
+  // shown on the audit trail so a refusal is never a blank.
+  unverifiedReasons: z.record(z.string(), z.string()).optional(),
 });
 export type StructuredDiff = z.infer<typeof structuredDiffSchema>;
 
@@ -86,6 +91,7 @@ export const guardrailVerdictSchema = z.object({
   greenLight: z.boolean(),
   enkryptEnabled: z.boolean(), // false when ENKRYPT_API_KEY is missing (never a green light)
   violations: z.array(z.string()),
+  warnings: z.array(z.string()).optional(), // recorded, shown, never blocking
   detail: z.record(z.string(), z.unknown()).optional(),
 });
 export type GuardrailVerdict = z.infer<typeof guardrailVerdictSchema>;

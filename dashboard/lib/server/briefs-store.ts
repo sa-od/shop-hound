@@ -1,0 +1,114 @@
+import { ObjectId } from 'mongodb';
+import { db, BRIEFS } from './db';
+import type { StructuredDiff } from './types';
+
+/** Archived Growth Briefs — the dashboard's read path and the pipeline's trend history. */
+
+export interface CompetitorSummary {
+  competitor: string;
+  status: string;
+  source?: 'shopify' | 'firecrawl';
+  productCount: number;
+  newSkus: number;
+  priceChanges: number;
+  titleChanges: number;
+  reason?: string; // why a competitor is unverified, when known
+}
+
+export interface Verdict {
+  greenLight: boolean;
+  violations: string[];
+  warnings?: string[];
+  method?: string | null;
+}
+
+export interface BriefSummary {
+  id: string;
+  weekOf: string;
+  createdAt: string;
+  greenLight: boolean;
+  competitors: CompetitorSummary[];
+  grounding: Verdict;
+  safety: Verdict;
+}
+
+export interface BriefDetail extends BriefSummary {
+  briefMarkdown: string;
+}
+
+interface BriefDoc {
+  _id: ObjectId;
+  weekOf: string;
+  competitorKey: string;
+  createdAt: Date;
+  greenLight: boolean;
+  briefMarkdown: string;
+  competitors: CompetitorSummary[];
+  grounding: Verdict;
+  safety: Verdict;
+  diff: StructuredDiff;
+}
+
+const SUMMARY_PROJECTION = { briefMarkdown: 0, diff: 0 } as const;
+
+function toSummary(d: Omit<BriefDoc, 'briefMarkdown' | 'diff'>): BriefSummary {
+  return {
+    id: d._id.toHexString(),
+    weekOf: d.weekOf,
+    createdAt: d.createdAt.toISOString(),
+    greenLight: d.greenLight,
+    competitors: d.competitors,
+    grounding: d.grounding,
+    safety: d.safety,
+  };
+}
+
+/**
+ * Save a brief. Identified by (week, competitor set): re-running the same
+ * competitors in a week replaces that card in place (same id, so links keep
+ * working); a different set makes a new one. Returns the brief id.
+ */
+export async function saveBrief(brief: Omit<BriefDoc, '_id' | 'createdAt'>): Promise<string> {
+  const doc = await db()
+    .collection<BriefDoc>(BRIEFS)
+    .findOneAndUpdate(
+      { weekOf: brief.weekOf, competitorKey: brief.competitorKey },
+      { $set: { ...brief, createdAt: new Date() } },
+      { upsert: true, returnDocument: 'after', projection: { _id: 1 } },
+    );
+  if (!doc) throw new Error('saveBrief: upsert returned no document');
+  return doc._id.toHexString();
+}
+
+/** Newest briefs first, without the heavy markdown/diff. */
+export async function listRecentBriefs(limit = 50): Promise<BriefSummary[]> {
+  const docs = await db()
+    .collection<BriefDoc>(BRIEFS)
+    .find({}, { projection: SUMMARY_PROJECTION })
+    .sort({ createdAt: -1 })
+    .limit(limit)
+    .toArray();
+  return docs.map(toSummary);
+}
+
+/** Recent briefs covering any of the given competitors — trend context for the agent. */
+export async function briefsForCompetitors(competitors: string[], limit = 4): Promise<BriefSummary[]> {
+  const docs = await db()
+    .collection<BriefDoc>(BRIEFS)
+    .find({ 'competitors.competitor': { $in: competitors } }, { projection: SUMMARY_PROJECTION })
+    .sort({ createdAt: -1 })
+    .limit(limit)
+    .toArray();
+  return docs.map(toSummary);
+}
+
+export async function getBrief(id: string): Promise<BriefDetail | null> {
+  if (!ObjectId.isValid(id)) return null;
+  const d = await db().collection<BriefDoc>(BRIEFS).findOne({ _id: new ObjectId(id) });
+  if (!d) return null;
+  return { ...toSummary(d), briefMarkdown: d.briefMarkdown };
+}
+
+export async function countBriefs(): Promise<number> {
+  return db().collection(BRIEFS).estimatedDocumentCount();
+}

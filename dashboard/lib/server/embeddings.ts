@@ -16,8 +16,8 @@ let _dimension: number | null = null;
  * Embedding dimension probed from the live model (cached). We ask for
  * EMBEDDING_DIMENSIONS explicitly, but we still probe rather than trust the
  * constant: if a provider or model ever ignores the `dimensions` parameter we
- * want to fail here, loudly, instead of writing wrong-width vectors at every
- * Qdrant collection created from this number.
+ * want to fail here, loudly, instead of writing wrong-width vectors that the
+ * vector index (declared at this width) would reject.
  */
 export async function embeddingDimension(): Promise<number> {
   if (_dimension === null) {
@@ -25,8 +25,8 @@ export async function embeddingDimension(): Promise<number> {
     if (probe.length !== EMBEDDING_DIMENSIONS) {
       throw new Error(
         `Embedding width mismatch: ${EMBEDDING_MODEL_ID} returned ${probe.length} dims, ` +
-          `but ${EMBEDDING_DIMENSIONS} was requested. The Qdrant collections are fixed at ` +
-          `${EMBEDDING_DIMENSIONS} — see EMBEDDING_DIMENSIONS in lib/openai.ts.`,
+          `but ${EMBEDDING_DIMENSIONS} was requested. The vector index is declared at ` +
+          `${EMBEDDING_DIMENSIONS} — see EMBEDDING_DIMENSIONS in lib/server/openai.ts.`,
       );
     }
     _dimension = probe.length;
