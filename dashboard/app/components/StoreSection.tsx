@@ -39,6 +39,7 @@ export function StoreSection({
   tracked = null,
   retryOn = null,
   contactEmail = null,
+  productDelta,
 }: {
   brief: BriefDetail;
   row: MovementRow;
@@ -47,6 +48,8 @@ export function StoreSection({
   retryOn?: string | null;
   /** Where manual-read requests go (from the server's config). */
   contactEmail?: string | null;
+  /** This run's change in product count, from the run history. */
+  productDelta?: number;
 }) {
   const d = diffFor(brief, row.competitor);
   const tickets = priceTickets(brief).filter((t) => t.competitor === row.competitor);
@@ -133,7 +136,7 @@ export function StoreSection({
                     catalog={row.catalog}
                     partial={isPartialRead(row.source)}
                     complete={row.complete}
-                    delta={row.catalog.addOnsExcluded ? undefined : d.newSkus.length - d.removedSkus.length}
+                    delta={productDelta}
                   />
                   <h4 className="mt-7 font-cond text-lg font-bold">
                     Changes since the last check

@@ -1,9 +1,9 @@
 // Shared types + pure helpers. Imported by client components, so it must stay
 // free of server code: the server modules below are imported as TYPES only,
 // which are erased at compile time and never reach the browser bundle.
-import type { BriefSummary, BriefDetail, CompetitorSummary, Verdict } from './server/briefs-store';
+import type { BriefSummary, BriefDetail, CompetitorSummary, Verdict, StoreSummary, RunSummary } from './server/briefs-store';
 
-export type { BriefSummary, BriefDetail, CompetitorSummary, Verdict };
+export type { BriefSummary, BriefDetail, CompetitorSummary, Verdict, StoreSummary, RunSummary };
 
 /** One store waiting for, or going through, analysis. Position 1 is running now. */
 export interface QueueItem {
@@ -64,41 +64,6 @@ export interface Status {
   totalBriefs: number;
   /** Where users request a manual read of a store we can't read automatically. */
   contactEmail?: string;
-}
-
-/** One readable run of a store (some store was verified or saved as a baseline). Newest first in lists. */
-export interface RunSummary {
-  id: string;
-  createdAt: string;
-  greenLight: boolean;
-  status: 'verified' | 'first_snapshot';
-  /** Why it ran: added from the dashboard, or the weekly re-check. Absent on older briefs. */
-  trigger?: 'added' | 'weekly';
-  productCount: number;
-  /** false when the read was cut off by time ("at least N"). */
-  complete?: boolean;
-  priceChanges: number;
-  newSkus: number;
-  removed: number;
-  titleChanges: number;
-}
-
-/** One store on the Briefs page: its latest brief, run count, size and tracking. */
-export interface StoreSummary {
-  /** The domain, or "a.com, b.com" for an older multi-store brief. */
-  store: string;
-  competitorKey: string;
-  /** Latest brief of any kind: the store name links here. */
-  latestBriefId: string;
-  latestAt: string;
-  /** Readable runs only; unreadable checks aren't counted. */
-  runCount: number;
-  /** Latest readable run's product count, and the change from the run before it. */
-  productCount: number | null;
-  productDelta: number | null;
-  complete?: boolean;
-  needsManualRead?: boolean;
-  tracking: { tracked: boolean; trackedUntil: string | null; nextCheck: string | null; firstReadPending?: boolean };
 }
 
 // Totals across all competitors in a brief — used for the card stat row.

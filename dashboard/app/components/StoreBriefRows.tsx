@@ -6,7 +6,7 @@ import { ChevronDown } from "lucide-react";
 import type { RunSummary, StoreSummary } from "@/lib/api";
 import { productCountText } from "@/lib/brief";
 import { LocalTime } from "./LocalTime";
-import { RunsTable } from "./RunsTable";
+import { Delta, RunsTable } from "./RunsTable";
 
 const COLS = 4;
 
@@ -42,16 +42,10 @@ function Tracking({ s }: { s: StoreSummary }) {
 
 function Products({ s }: { s: StoreSummary }) {
   if (s.productCount === null) return <span className="text-ink-3">—</span>;
-  const d = s.productDelta;
   return (
     <>
       {productCountText(s.productCount, s.complete)}
-      {d !== null && d !== 0 && (
-        <span className={`ml-1.5 text-xs ${d < 0 ? "text-cut" : "text-ok"}`}>
-          {d > 0 ? "+" : "−"}
-          {Math.abs(d).toLocaleString()}
-        </span>
-      )}
+      <Delta d={s.productDelta} />
     </>
   );
 }

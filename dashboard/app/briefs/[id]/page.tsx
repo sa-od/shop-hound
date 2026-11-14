@@ -118,6 +118,7 @@ export default async function BriefPage({ params }: { params: Promise<{ id: stri
               tracked={tracking?.tracked ?? null}
               retryOn={retryOn}
               contactEmail={CONTACT_EMAIL}
+              productDelta={runs.find((x) => x.id === brief.id)?.productDelta}
             />
           ))}
 

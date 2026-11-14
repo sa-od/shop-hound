@@ -4,6 +4,17 @@ import { productCountText } from "@/lib/brief";
 import { AuditTag } from "./shelf";
 import { LocalTime } from "./LocalTime";
 
+/** "+2" / "−3" after a product count; nothing when unchanged or unknown. */
+export function Delta({ d }: { d?: number | null }) {
+  if (d === undefined || d === null || d === 0) return null;
+  return (
+    <span className={`ml-1.5 text-xs ${d < 0 ? "text-cut" : "text-ok"}`}>
+      {d > 0 ? "+" : "−"}
+      {Math.abs(d).toLocaleString()}
+    </span>
+  );
+}
+
 /** Why a run happened: a first check, or added by the user, or the weekly re-check. */
 export function runReason(r: RunSummary): string {
   if (r.status === "first_snapshot") return "First check";
@@ -95,7 +106,10 @@ export function RunsTable({ runs, currentId }: { runs: RunSummary[]; currentId?:
                   {r.id === currentId && <span className="ml-2 text-xs font-semibold text-ink-3">Viewing</span>}
                 </td>
                 <td className="whitespace-nowrap px-4 py-2.5 text-ink-2">{runReason(r)}</td>
-                <td className="px-4 py-2.5 text-right tabular-nums">{productCountText(r.productCount, r.complete)}</td>
+                <td className="whitespace-nowrap px-4 py-2.5 text-right tabular-nums">
+                  {productCountText(r.productCount, r.complete)}
+                  <Delta d={r.productDelta} />
+                </td>
                 {r.status === "first_snapshot" ? (
                   <td colSpan={FIGURES.length} className="px-4 py-2.5 text-right text-[13px] text-ink-3">
                     Baseline saved
