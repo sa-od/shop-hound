@@ -90,7 +90,9 @@ function schedule(delay?: number) {
   let wait = delay ?? (running ? RUNNING_POLL_MS : busy ? BUSY_POLL_MS : IDLE_POLL_MS);
   // A queue holding only retries wakes when this poll reaches the server, so poll just after the soonest retry time.
   const retryAts = (state?.queue ?? []).filter((q) => q.status === 'retrying' && q.retryAt).map((q) => Date.parse(q.retryAt!));
-  if (retryAts.length) wait = Math.min(wait, Math.max(1_000, Math.min(...retryAts) + RETRY_GRACE_MS - Date.now()));
+  // Only while that time is ahead: an overdue retry starts on the next normal poll.
+  const due = retryAts.length ? Math.min(...retryAts) + RETRY_GRACE_MS : 0;
+  if (due > Date.now()) wait = Math.min(wait, Math.max(1_000, due - Date.now()));
   timer = setTimeout(poll, wait);
 }
 

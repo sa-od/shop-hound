@@ -17,7 +17,7 @@ export function NewAnalysisForm({ initial, autoFocus = false }: { initial: Statu
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<{ text: string; code?: string } | null>(null);
   // The store just added here: its line turns into the result once its run finishes.
-  const [added, setAdded] = useState<{ text: string; runId: string; store: string; at: string } | null>(null);
+  const [added, setAdded] = useState<{ text: string; runId: string; store: string } | null>(null);
   // The server checked the store and can't read it automatically: an option, not an error.
   const [manual, setManual] = useState<ManualAnswer | null>(null);
 
@@ -51,7 +51,6 @@ export function NewAnalysisForm({ initial, autoFocus = false }: { initial: Statu
       text: r.alreadyQueued ? `${r.store} is already in the queue.` : `${r.store} added.`,
       runId: r.runId,
       store: r.store,
-      at: new Date().toISOString(),
     });
   }
 
@@ -117,14 +116,12 @@ export function NewAnalysisForm({ initial, autoFocus = false }: { initial: Statu
   );
 }
 
-/** The finished run for what was added: seen leaving the queue, or the server's last run for it. */
-function resultFor(added: { runId: string; store: string; at: string }, live: LiveState): Outcome | null {
+/** The finished run for what was added, matched by runId only (no clock comparisons): seen leaving the queue, or the server's last run. */
+function resultFor(added: { runId: string; store: string }, live: LiveState): Outcome | null {
   const seen = live.outcomes.find((o) => o.runId === added.runId);
   if (seen) return seen;
   const r = live.status.lastRun;
-  if (!r || live.queue.some((q) => q.runId === added.runId)) return null;
-  const same = r.runId === added.runId || (r.store === added.store && (r.finishedAt ?? "") > added.at);
-  if (!same) return null;
+  if (!r || r.runId !== added.runId) return null;
   return {
     runId: r.runId,
     store: r.store ?? added.store,
@@ -136,7 +133,7 @@ function resultFor(added: { runId: string; store: string; at: string }, live: Li
   };
 }
 
-function AddedLine({ added, live }: { added: { text: string; runId: string; store: string; at: string }; live: LiveState }) {
+function AddedLine({ added, live }: { added: { text: string; runId: string; store: string }; live: LiveState }) {
   const o = resultFor(added, live);
   if (!o) return <p className="mt-2 text-[13px] font-semibold leading-relaxed text-ink">{added.text}</p>;
   if (o.needsManualRead)
