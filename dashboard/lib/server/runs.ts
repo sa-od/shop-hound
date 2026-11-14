@@ -44,7 +44,17 @@ export interface RunRecord {
   manualRead: boolean;
   /** Its platform, message and ready-made email. */
   manualReadInfo: import('./contact').ManualRead | null;
+  /** While running: the step in progress, when it began, live detail, and whether it is a first (baseline) check. */
+  step: RunStep | null;
+  stepStartedAt: string | null;
+  stepDetail: string | null;
+  baseline: boolean | null;
+  /** Failed runs: the step it failed in. */
+  failedStep: RunStep | null;
 }
+
+import type { RunStep } from '../api';
+export type { RunStep };
 
 interface RunDoc {
   _id: string;
@@ -65,6 +75,11 @@ interface RunDoc {
   blocked?: boolean;
   manualRead?: boolean;
   manualReadInfo?: import('./contact').ManualRead | null;
+  step?: RunStep;
+  stepStartedAt?: Date;
+  stepDetail?: string;
+  baseline?: boolean;
+  failedStep?: RunStep | null;
 }
 
 /**
@@ -116,6 +131,11 @@ function toRecord(d: RunDoc): RunRecord {
     blocked: d.blocked ?? false,
     manualRead: d.manualRead ?? false,
     manualReadInfo: d.manualReadInfo ?? null,
+    step: d.step ?? null,
+    stepStartedAt: d.stepStartedAt?.toISOString() ?? null,
+    stepDetail: d.stepDetail ?? null,
+    baseline: d.baseline ?? null,
+    failedStep: d.failedStep ?? null,
   };
 }
 
@@ -217,11 +237,28 @@ export async function hasClaimableRun(): Promise<boolean> {
   return (await runs().countDocuments(CLAIMABLE(), { limit: 1 })) > 0;
 }
 
+const PROGRESS_FIELDS = { step: '', stepStartedAt: '', stepDetail: '', baseline: '' } as const;
+
+/** Record a running run's progress. `newStep`: the step changed, so restart its clock. */
+export async function reportProgress(runId: string, p: { step: RunStep; detail?: string; baseline?: boolean }, newStep: boolean): Promise<void> {
+  await runs().updateOne(
+    { _id: runId, status: 'running' },
+    {
+      $set: {
+        step: p.step,
+        ...(newStep ? { stepStartedAt: new Date() } : {}),
+        ...(p.detail !== undefined ? { stepDetail: p.detail.slice(0, 120) } : {}),
+        ...(p.baseline !== undefined ? { baseline: p.baseline } : {}),
+      },
+    },
+  );
+}
+
 /** Put a running run back in line, to be tried again at `retryAt`. */
 export async function scheduleRetry(runId: string, retryAt: Date, reason: string): Promise<void> {
   await runs().updateOne(
     { _id: runId, status: 'running' },
-    { $set: { status: 'retrying', retryAt, retryReason: reason.slice(0, 300), startedAt: null } },
+    { $set: { status: 'retrying', retryAt, retryReason: reason.slice(0, 300), startedAt: null }, $unset: PROGRESS_FIELDS },
   );
 }
 
@@ -249,7 +286,7 @@ export async function finishRun(
   runId: string,
   outcome:
     | { status: 'success'; briefId: string; blocked?: boolean; manualRead?: boolean; manualReadInfo?: import('./contact').ManualRead | null }
-    | { status: 'failed'; error: string },
+    | { status: 'failed'; error: string; failedStep?: RunStep | null },
 ): Promise<void> {
   await runs().updateOne(
     { _id: runId },
@@ -262,9 +299,10 @@ export async function finishRun(
         blocked: outcome.status === 'success' && outcome.blocked === true,
         manualRead: outcome.status === 'success' && outcome.manualRead === true,
         manualReadInfo: outcome.status === 'success' ? (outcome.manualReadInfo ?? null) : null,
+        failedStep: outcome.status === 'failed' ? (outcome.failedStep ?? null) : null,
         retryAt: null,
       },
-      $unset: { active: '' },
+      $unset: { active: '', ...PROGRESS_FIELDS },
     },
   );
 }

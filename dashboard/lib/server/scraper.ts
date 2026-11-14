@@ -267,7 +267,14 @@ export interface CatalogRead {
  * so far are returned with `complete: false` — such a read must never be
  * compared with another (every unread product would look "removed").
  */
-export async function readShopifyCatalog(host: string, fetchPage: PageFetcher, bases: string[], deadlineAt?: number): Promise<CatalogRead> {
+export async function readShopifyCatalog(
+  host: string,
+  fetchPage: PageFetcher,
+  bases: string[],
+  deadlineAt?: number,
+  /** Called after each page with the number of products read so far. */
+  onPage?: (productsSoFar: number) => void,
+): Promise<CatalogRead> {
   const { base, first } = await openCatalog(host, fetchPage, bases, deadlineAt);
   // Keyed by product id: if the store changes mid-read, pages can shift and
   // repeat a product.
@@ -278,6 +285,7 @@ export async function readShopifyCatalog(host: string, fetchPage: PageFetcher, b
     return byId.size - before;
   };
   add(first);
+  onPage?.(byId.size);
   let last = first;
   for (let page = 2; last.products.length >= PAGE_LIMIT; page++) {
     await new Promise(r => setTimeout(r, PAGE_GAP_MS));
@@ -291,14 +299,15 @@ export async function readShopifyCatalog(host: string, fetchPage: PageFetcher, b
     // A full page with nothing new means the store is repeating itself
     // (some ignore `page` past the end) — that is the end, not a loop.
     if (add(res.data) === 0) break;
+    onPage?.(byId.size);
     last = res.data;
   }
   return { products: [...byId.values()], complete: true };
 }
 
-export async function scrapeShopifyCatalog(domain: string, deadlineAt?: number): Promise<CatalogRead> {
+export async function scrapeShopifyCatalog(domain: string, deadlineAt?: number, onPage?: (productsSoFar: number) => void): Promise<CatalogRead> {
   const host = normalizeDomain(domain);
-  return readShopifyCatalog(host, directPage, [host, `www.${host}`], deadlineAt);
+  return readShopifyCatalog(host, directPage, [host, `www.${host}`], deadlineAt, onPage);
 }
 
 // The add-store check must answer while the user waits.
@@ -400,7 +409,7 @@ const INJECTION_DEMO_CATALOG: NormalizedProduct[] = [
 export async function scrapeCatalog(
   domain: string,
   deadlineAt?: number,
-  opts: { fallbackOnBlock?: boolean } = {},
+  opts: { fallbackOnBlock?: boolean; onPage?: (productsSoFar: number) => void } = {},
 ): Promise<{ products: NormalizedProduct[]; source: CatalogSource; complete?: boolean }> {
   const host = normalizeDomain(domain);
   if (host === INJECTION_DEMO_DOMAIN) {
@@ -422,7 +431,7 @@ export async function scrapeCatalog(
     err = new StoreBlockedError('the store is limiting automated requests right now', cooldown, 429);
   } else {
     try {
-      return { ...nonEmpty(await scrapeShopifyCatalog(host, deadlineAt)), source: 'shopify' };
+      return { ...nonEmpty(await scrapeShopifyCatalog(host, deadlineAt, opts.onPage)), source: 'shopify' };
     } catch (e) {
       err = e;
     }
@@ -440,7 +449,7 @@ export async function scrapeCatalog(
   //    disables it (blocked stores then wait and retry instead).
   if (err instanceof StoreBlockedError && process.env.SHOPIFY_RELAY !== 'off') {
     try {
-      const read = nonEmpty(await readShopifyCatalog(host, relayPage, [host], deadlineAt));
+      const read = nonEmpty(await readShopifyCatalog(host, relayPage, [host], deadlineAt, opts.onPage));
       console.log(`[scrape] ${host}: read via Firecrawl relay (direct: ${err.message})`);
       return { ...read, source: 'shopify_relay' };
     } catch (relayErr) {

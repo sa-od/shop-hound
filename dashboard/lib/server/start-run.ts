@@ -3,7 +3,31 @@ import { after } from 'next/server';
 import { getDeadline } from '@vercel/functions';
 import { runAnalysis, RunBlockedError } from './pipeline';
 import { hasRetriesLeft, retryDelayMs } from './retry-policy';
-import { claimNextRun, enqueueRun, finishRun, getActiveRun, getQueue, hasClaimableRun, scheduleRetry, type RunRecord, type RunTrigger } from './runs';
+import { claimNextRun, enqueueRun, finishRun, getActiveRun, getQueue, hasClaimableRun, reportProgress, scheduleRetry, type RunRecord, type RunStep, type RunTrigger } from './runs';
+import type { RunProgress } from './pipeline';
+
+// Detail-only progress (e.g. "500 products so far") is written at most this
+// often; step changes are written at once.
+const DETAIL_WRITE_MS = 1_000;
+
+/**
+ * Progress reporter for one run: writes to its run document (status reads
+ * from the database), in order, never throwing. Remembers the current step
+ * so a failure can say where it happened.
+ */
+function progressReporter(runId: string) {
+  let step: RunStep | null = null;
+  let lastWrite = 0;
+  let chain = Promise.resolve();
+  const report = (p: RunProgress) => {
+    const newStep = p.step !== step;
+    if (!newStep && p.baseline === undefined && Date.now() - lastWrite < DETAIL_WRITE_MS) return;
+    step = p.step;
+    lastWrite = Date.now();
+    chain = chain.then(() => reportProgress(runId, p, newStep)).catch(err => console.warn(`[${runId}] progress write failed:`, String(err).slice(0, 120)));
+  };
+  return { report, current: () => step, flushed: () => chain };
+}
 
 /**
  * Hobby's function limit — both the default and the maximum. Route files that
@@ -38,13 +62,16 @@ function requestDeadline(requestStartedAt: number): number {
 /** Execute one claimed run to completion, recording success or failure. Never throws. */
 async function executeRun(run: RunRecord, deadlineAt: number): Promise<void> {
   const retriesLeft = hasRetriesLeft(run.attempt);
+  const progress = progressReporter(run.runId);
   try {
     const result = await runAnalysis({
       competitors: run.competitors,
       deadlineAt,
       retryBlocked: retriesLeft,
+      onProgress: progress.report,
       log: m => console.log(`[${run.runId}] ${m}`),
     });
+    await progress.flushed(); // so a late progress write can't land after the outcome
     await finishRun(run.runId, {
       status: 'success',
       briefId: result.briefId,
@@ -53,6 +80,7 @@ async function executeRun(run: RunRecord, deadlineAt: number): Promise<void> {
       manualReadInfo: result.manualReadInfo,
     });
   } catch (err) {
+    await progress.flushed();
     if (err instanceof RunBlockedError && retriesLeft) {
       const retryAt = new Date(Date.now() + retryDelayMs(run.attempt, err.retryAfterMs)!);
       console.log(`[${run.runId}] blocked (${err.message}) — attempt ${run.attempt}, retrying at ${retryAt.toISOString()}`);
@@ -61,7 +89,7 @@ async function executeRun(run: RunRecord, deadlineAt: number): Promise<void> {
     }
     const message = err instanceof Error ? (err.stack ?? err.message) : String(err);
     console.error(`[${run.runId}] failed:`, message);
-    await finishRun(run.runId, { status: 'failed', error: message }).catch(e =>
+    await finishRun(run.runId, { status: 'failed', error: message, failedStep: progress.current() }).catch(e =>
       console.error(`[${run.runId}] could not record failure:`, e),
     );
   }

@@ -21,7 +21,21 @@ import { manualRead as manualReadInfo, type ManualRead } from './contact';
  * unverified — never guessed at — and the rest of the run still completes.
  */
 
+/** The steps a run goes through, in order (shown live as a checklist). Shared with the UI. */
+import type { RunStep } from '../api';
+export type { RunStep };
+
+export interface RunProgress {
+  step: RunStep;
+  /** Short live text for the step, written for the user ("312 products so far"). */
+  detail?: string;
+  /** No previous full read to compare with: this run saves the baseline. */
+  baseline?: boolean;
+}
+
 export interface RunOptions {
+  /** Live progress, for the queue's step checklist. Must not throw. */
+  onProgress?: (p: RunProgress) => void;
   competitors: string[];
   /** Absolute epoch ms by which the whole run must finish. Omit for no limit (local runs). */
   deadlineAt?: number;
@@ -106,6 +120,14 @@ async function vectorsFor(snapshot: CompetitorSnapshot, embedUntil: number | und
 
 export async function runAnalysis(opts: RunOptions): Promise<RunResult> {
   const log = opts.log ?? ((m: string) => console.log(m));
+  const progress = (p: RunProgress) => {
+    try {
+      opts.onProgress?.(p);
+    } catch {
+      /* progress is best-effort */
+    }
+  };
+  progress({ step: 'reading', detail: 'Looking for the product catalogue' });
   const { deadlineAt } = opts;
   const snapshotDate = new Date().toISOString().slice(0, 10);
 
@@ -135,7 +157,10 @@ export async function runAnalysis(opts: RunOptions): Promise<RunResult> {
         continue;
       }
       try {
-        const { products, source, complete } = await scrapeCatalog(competitor, scrapeDeadline, { fallbackOnBlock: !opts.retryBlocked });
+        const { products, source, complete } = await scrapeCatalog(competitor, scrapeDeadline, {
+          fallbackOnBlock: !opts.retryBlocked,
+          onPage: n => progress({ step: 'reading', detail: `${n.toLocaleString('en-US')} products so far` }),
+        });
         snapshots.push({ competitor, snapshotDate, products, source, ...(complete === false ? { complete: false } : {}) });
         log(`[scrape] ${competitor}: ${products.length} products via ${source}${complete === false ? ' — INCOMPLETE (time ran out), will not be compared' : ''}`);
       } catch (err) {
@@ -170,12 +195,23 @@ export async function runAnalysis(opts: RunOptions): Promise<RunResult> {
   const embedUntil = deadlineAt === undefined ? undefined : deadlineAt - AFTER_EMBED_MS;
   const vectorsByCompetitor = new Map<string, Map<string, number[]>>();
   const previousByCompetitor = new Map<string, CompetitorSnapshot | null>();
+  const productTotal = snapshots.reduce((n, s) => n + s.products.length, 0).toLocaleString('en-US');
+  progress({ step: 'comparing', detail: `${productTotal} products read` });
   for (const snapshot of snapshots) {
     // A partial read (AI-read, or time ran out) is never diffed: baseline only.
     previousByCompetitor.set(
       snapshot.competitor,
       isFullCatalog(snapshot.source, snapshot.complete) ? await getPreviousSnapshot(snapshot.competitor, snapshot.snapshotDate) : null,
     );
+    if (snapshots.length > 0 && snapshots.every(s => previousByCompetitor.has(s.competitor))) {
+      const prev = [...previousByCompetitor.values()];
+      const baseline = prev.every(p => p === null);
+      progress({
+        step: 'comparing',
+        baseline,
+        detail: baseline ? `Saving ${productTotal} products as the baseline` : `Comparing ${productTotal} products with the last check`,
+      });
+    }
     const { vectors, textKeys, reused, skipped } = await vectorsFor(snapshot, embedUntil);
     await saveSnapshot(snapshot, vectors, textKeys);
     vectorsByCompetitor.set(
@@ -227,6 +263,7 @@ export async function runAnalysis(opts: RunOptions): Promise<RunResult> {
   // anywhere in the payload). A real address keeps its domain and is caught.
   const scrapedTitles = snapshots.flatMap(s => s.products.map(p => p.title));
   const diffJson = JSON.stringify(diff);
+  progress({ step: 'grounding', detail: 'Checking the data with Enkrypt' });
   const grounding = await groundingCheck(maskCompetitorDomains(`${diffJson}\n${scrapedTitles.join('\n')}`, diffJson));
   if (groundingErrors.length > 0) {
     grounding.greenLight = false;
@@ -274,6 +311,7 @@ export async function runAnalysis(opts: RunOptions): Promise<RunResult> {
     // Week-over-week trend context from the archive: prior briefs covering
     // any of this run's competitors, newest first. Failure here never blocks.
     const runCompetitors = new Set(diffs.map(d => d.competitor));
+    progress({ step: 'writing', detail: 'The analyst is writing the brief' });
     let historyEntries: unknown[] = [];
     try {
       historyEntries = (await briefsForCompetitors([...runCompetitors], 4)).map(b => ({
@@ -302,6 +340,7 @@ export async function runAnalysis(opts: RunOptions): Promise<RunResult> {
   }
 
   // ── 6. Safety audit (Enkrypt — output side) ──
+  progress({ step: 'safety', detail: 'Auditing the brief with Enkrypt' });
   let safety: GuardrailVerdict;
   if (!grounding.greenLight) {
     // Nothing was generated, so there is nothing to audit — record the skip

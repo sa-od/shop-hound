@@ -24,6 +24,14 @@ export async function getStatus(): Promise<Status> {
       position: i + 1,
       queuedAt: r.queuedAt,
       ...(r.status === 'retrying' && r.retryAt ? { retryAt: r.retryAt, reason: r.retryReason ?? undefined, attempt: r.attempt, maxAttempts: MAX_ATTEMPTS } : {}),
+      ...(r.status === 'running' && r.step
+        ? {
+            step: r.step,
+            ...(r.stepStartedAt ? { stepStartedAt: r.stepStartedAt } : {}),
+            ...(r.stepDetail ? { detail: r.stepDetail } : {}),
+            ...(r.baseline !== null ? { baseline: r.baseline } : {}),
+          }
+        : {}),
     })),
     lastRun: lastRun
       ? {
@@ -32,6 +40,7 @@ export async function getStatus(): Promise<Status> {
           status: lastRun.status === 'failed' ? 'failed' : 'success',
           finishedAt: lastRun.finishedAt,
           error: lastRun.status === 'failed' ? firstLine(lastRun.error) : null,
+          ...(lastRun.status === 'failed' && lastRun.failedStep ? { failedStep: lastRun.failedStep } : {}),
           briefId: lastRun.briefId,
           ...(lastRun.manualRead ? { needsManualRead: true, ...(lastRun.manualReadInfo ? { manualRead: lastRun.manualReadInfo } : {}) } : {}),
         }
