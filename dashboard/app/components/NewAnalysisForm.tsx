@@ -100,7 +100,7 @@ export function NewAnalysisForm({ initial, autoFocus = false }: { initial: Statu
               : (error?.text ??
                 (added ? (
                   <>
-                    <span className="font-semibold">{added}</span> You can add the next one now.
+                    <span className="font-semibold">{added}</span>
                   </>
                 ) : (
                   "Takes about a minute per store. Each store you add is re-checked automatically every week for 28 days."

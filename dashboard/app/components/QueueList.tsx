@@ -11,9 +11,13 @@ import { stepLabel } from "@/lib/run-steps";
 /** The server sends its cap (maxAttempts); 3 for servers that don't. */
 const DEFAULT_MAX_ATTEMPTS = 3;
 
-/** Stores in the queue, then the ones that finished during this visit. */
+/**
+ * Stores in the queue. Once the queue is empty, only the store that finished
+ * last shows its result; earlier ones aren't kept here (they're in Briefs).
+ */
 export function QueueList({ live }: { live: LiveState }) {
-  const { queue, outcomes, status } = live;
+  const { queue, status } = live;
+  const outcomes = queue.length === 0 ? live.outcomes.slice(0, 1) : [];
   if (queue.length === 0 && outcomes.length === 0) return null;
 
   return (
