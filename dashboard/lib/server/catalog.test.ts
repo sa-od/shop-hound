@@ -59,3 +59,14 @@ test('only full catalogues are compared week over week', async () => {
   assert.equal(isFullCatalog('shopify', false), false); // time ran out mid-read
   assert.equal(isFullCatalog('shopify', true), true);
 });
+
+test('our own contact email is masked for the PII detector; other emails are not', async () => {
+  const { maskCompetitorDomains } = await import('./enkrypt');
+  const { CONTACT_EMAIL } = await import('./contact');
+  const diff = JSON.stringify({ diffs: [{ competitor: 'bombas.com' }] });
+  const out = maskCompetitorDomains(`Email ${CONTACT_EMAIL.toUpperCase()} for bombas.com. Leak: someone@else.com`, diff);
+  assert.ok(!out.toLowerCase().includes(CONTACT_EMAIL.toLowerCase()));
+  assert.match(out, /\[our contact address\]/);
+  assert.match(out, /someone@else\.com/);
+  assert.match(out, /Competitor A/);
+});

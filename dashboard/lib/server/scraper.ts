@@ -2,6 +2,7 @@ import { normalizedProductSchema, type NormalizedProduct } from './types';
 import { firecrawlEnabled, extractCatalogWithFirecrawl, fetchViaFirecrawl } from './firecrawl';
 import { safeFetch, describeFetchError } from './safe-fetch';
 import { shopifyCooldownMs, startShopifyCooldown } from './throttle';
+import { aiReadEnabled, manualReadMessage } from './contact';
 
 /**
  * Hybrid ingestion (PRD §5.1) — Shopify-first, Firecrawl-fallback.
@@ -44,6 +45,13 @@ export function normalizeDomain(input: string): string {
  * Shopify catalogue". Unreachable stores skip the paid Firecrawl fallback.
  */
 export class StoreUnreachableError extends Error {}
+
+/**
+ * The store has no catalogue file we can read (not Shopify, or a custom
+ * storefront) and AI reading is switched off: it needs a manual read, which
+ * the user can request by email. Not temporary — never retried or tracked.
+ */
+export class ManualReadNeededError extends Error {}
 
 /**
  * The store refused us for now (429 rate limit, 403 block) — temporary, so
@@ -375,7 +383,18 @@ export async function scrapeCatalog(
 
   // 4. No catalogue to read (not Shopify, or a custom storefront): AI-read
   //    the site's pages — partial, and labelled as such on the brief.
+  //    While AI reading is off (the default): a refusing store stays a
+  //    refusal (tracked, retried daily); a store with no catalogue needs a
+  //    manual read, requested by email.
   const why = err instanceof Error ? err.message : String(err);
+  if (!aiReadEnabled()) {
+    if (blocked) throw blocked;
+    const reason = /^not a Shopify catalogue|catalogue is empty/.test(why)
+      ? "it doesn't publish a product catalogue we can read (it isn't a standard Shopify store)"
+      : `its product catalogue couldn't be read (${why})`;
+    console.warn(`[scrape] ${host}: no catalogue (${why}) — AI reading is off, manual read needed`);
+    throw new ManualReadNeededError(manualReadMessage(host, reason));
+  }
   console.warn(`[scrape] ${host}: no catalogue (${why}), AI-reading the site with Firecrawl`);
   try {
     return { products: await extractCatalogWithFirecrawl(host, deadlineAt), source: 'firecrawl' };

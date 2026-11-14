@@ -36,9 +36,13 @@ export interface Status {
     finishedAt: string | null;
     error: string | null;
     briefId: string | null;
+    /** The store has no readable catalogue: show the "request by email" option (see contactEmail). */
+    needsManualRead?: boolean;
   } | null;
   lastBrief: { id: string; weekOf: string; greenLight: boolean; createdAt: string; competitorCount: number } | null;
   totalBriefs: number;
+  /** Where users request a manual read of a store we can't read automatically. */
+  contactEmail?: string;
 }
 
 // Totals across all competitors in a brief — used for the card stat row.

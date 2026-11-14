@@ -40,6 +40,8 @@ export interface RunRecord {
   retryReason: string | null;
   /** Finished, but its store refused us on the final attempt (not unreadable). */
   blocked: boolean;
+  /** Finished, but the store has no readable catalogue: a manual read can be requested by email. */
+  manualRead: boolean;
 }
 
 interface RunDoc {
@@ -59,6 +61,7 @@ interface RunDoc {
   retryAt?: Date | null;
   retryReason?: string | null;
   blocked?: boolean;
+  manualRead?: boolean;
 }
 
 /**
@@ -108,6 +111,7 @@ function toRecord(d: RunDoc): RunRecord {
     retryAt: d.retryAt?.toISOString() ?? null,
     retryReason: d.retryReason ?? null,
     blocked: d.blocked ?? false,
+    manualRead: d.manualRead ?? false,
   };
 }
 
@@ -239,7 +243,7 @@ export async function claimNextRun(): Promise<RunRecord | null> {
 
 export async function finishRun(
   runId: string,
-  outcome: { status: 'success'; briefId: string; blocked?: boolean } | { status: 'failed'; error: string },
+  outcome: { status: 'success'; briefId: string; blocked?: boolean; manualRead?: boolean } | { status: 'failed'; error: string },
 ): Promise<void> {
   await runs().updateOne(
     { _id: runId },
@@ -250,6 +254,7 @@ export async function finishRun(
         error: outcome.status === 'failed' ? outcome.error.slice(0, 2000) : null,
         briefId: outcome.status === 'success' ? outcome.briefId : null,
         blocked: outcome.status === 'success' && outcome.blocked === true,
+        manualRead: outcome.status === 'success' && outcome.manualRead === true,
         retryAt: null,
       },
       $unset: { active: '' },

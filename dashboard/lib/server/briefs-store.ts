@@ -17,6 +17,8 @@ export interface CompetitorSummary {
   titleChanges: number;
   reason?: string; // why a competitor is unverified, when known
   lastKnown?: { snapshotDate: string; productCount: number }; // unverified, but read on an earlier check
+  /** No readable catalogue (AI reading off): `reason` tells the user to email for a manual read. */
+  needsManualRead?: boolean;
 }
 
 export interface Verdict {

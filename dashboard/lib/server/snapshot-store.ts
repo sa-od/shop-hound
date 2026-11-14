@@ -222,12 +222,16 @@ export async function loadReusableVectors(competitor: string): Promise<Map<strin
   return out;
 }
 
-/** Date and size of a store's latest snapshot, without loading its products. */
+/**
+ * Date and size of a store's latest FULL-catalogue snapshot, without loading
+ * its products. Partial reads (AI-read, or cut off by time) are skipped: their
+ * product count is not the store's size.
+ */
 export async function getLatestSnapshotInfo(competitor: string): Promise<{ snapshotDate: string; productCount: number } | null> {
   const [doc] = await db()
     .collection<SnapshotDoc>(SNAPSHOTS)
     .aggregate<{ snapshotDate: string; productCount: number }>([
-      { $match: { competitor } },
+      { $match: { competitor, source: { $ne: 'firecrawl' }, complete: { $ne: false } } },
       { $sort: { snapshotDate: -1 } },
       { $limit: 1 },
       // productCount is stored on every snapshot (and is the only count for one split into parts).

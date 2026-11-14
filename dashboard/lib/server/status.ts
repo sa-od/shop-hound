@@ -2,6 +2,7 @@ import 'server-only';
 import { listRecentBriefs, countBriefs } from './briefs-store';
 import { getQueue, getLastFinishedRun } from './runs';
 import { MAX_ATTEMPTS } from './start-run';
+import { CONTACT_EMAIL } from './contact';
 import type { Status } from '@/lib/api';
 
 /** Everything the top bar, the add-store form and the queue list need, in one read. */
@@ -32,12 +33,14 @@ export async function getStatus(): Promise<Status> {
           finishedAt: lastRun.finishedAt,
           error: lastRun.status === 'failed' ? firstLine(lastRun.error) : null,
           briefId: lastRun.briefId,
+          ...(lastRun.manualRead ? { needsManualRead: true } : {}),
         }
       : null,
     lastBrief: latest
       ? { id: latest.id, weekOf: latest.weekOf, greenLight: latest.greenLight, createdAt: latest.createdAt, competitorCount: latest.competitors.length }
       : null,
     totalBriefs,
+    contactEmail: CONTACT_EMAIL,
   };
 }
 

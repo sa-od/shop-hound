@@ -1,4 +1,5 @@
 import type { GuardrailVerdict } from './types';
+import { CONTACT_EMAIL } from './contact';
 
 /**
  * Enkrypt AI client — implements both halves of the "sandwich" (PRD §5.3):
@@ -392,7 +393,11 @@ const BRIEF_INSTRUCTION =
  * reaches the detector intact and is still caught. The deterministic
  * grounding checks keep reading the original brief.
  */
-export function maskCompetitorDomains(text: string, diffContext: string): string {
+export function maskCompetitorDomains(rawText: string, diffContext: string): string {
+  // Our own contact address appears in the text we write for stores that need
+  // a manual read ("email … for the results"). It is ours and intended, so it
+  // is masked for the PII detector — any OTHER address is still caught.
+  const text = rawText.replace(new RegExp(CONTACT_EMAIL.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi'), '[our contact address]');
   let competitors: string[] = [];
   try {
     competitors = (JSON.parse(diffContext).diffs ?? []).map((d: { competitor: string }) => d.competitor);

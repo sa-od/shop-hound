@@ -102,6 +102,8 @@ export const competitorDiffSchema = z.object({
   catalog: catalogSummarySchema.optional(),
   /** Unverified stores read on an earlier check: the latest snapshot we have. */
   lastKnown: z.object({ snapshotDate: z.string(), productCount: z.number() }).optional(),
+  // No readable catalogue, AI reading off: the user can request a manual read by email.
+  needsManualRead: z.boolean().optional(),
 });
 export type CompetitorDiff = z.infer<typeof competitorDiffSchema>;
 

@@ -76,7 +76,7 @@ export interface UserRunFact {
 export function computeTrackedSets(args: {
   userRuns: UserRunFact[];
   lastBriefAt: Map<string, Date>;
-  /** Stores with at least one saved snapshot; omitted = don't filter. */
+  /** Stores with at least one full-catalogue snapshot; omitted = don't filter. */
   scrapedStores?: Set<string>;
   /** Never-read sets whose last run was refused for now (still worth retrying). */
   pendingKeys?: Set<string>;
@@ -160,9 +160,16 @@ async function loadUserRuns(now: Date): Promise<UserRunFact[]> {
   return rows.map(r => ({ competitorKey: r._id, competitors: r.competitors, lastUserRunAt: r.lastUserRunAt }));
 }
 
+/**
+ * Stores with at least one FULL catalogue read. AI-read (partial) snapshots
+ * don't count: they are never compared week over week, so re-checking such a
+ * store weekly would only repeat a partial snapshot.
+ */
 async function loadScrapedStores(stores: string[]): Promise<Set<string>> {
   if (stores.length === 0) return new Set();
-  const found = await db().collection(SNAPSHOTS).distinct('competitor', { competitor: { $in: stores } });
+  const found = await db()
+    .collection(SNAPSHOTS)
+    .distinct('competitor', { competitor: { $in: stores }, source: { $ne: 'firecrawl' }, complete: { $ne: false } });
   return new Set(found as string[]);
 }
 

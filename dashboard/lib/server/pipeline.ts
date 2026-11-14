@@ -1,5 +1,5 @@
 import { type CompetitorSnapshot, type CompetitorDiff, type StructuredDiff, type GuardrailVerdict } from './types';
-import { scrapeCatalog, normalizeDomain, msUntil, StoreBlockedError } from './scraper';
+import { scrapeCatalog, normalizeDomain, msUntil, StoreBlockedError, ManualReadNeededError } from './scraper';
 import { embedProducts, productToEmbeddingText } from './embeddings';
 import { saveSnapshot, getPreviousSnapshot, getLatestSnapshotInfo, isFullCatalog, loadReusableVectors, embeddingTextKey } from './snapshot-store';
 import { summarizeCatalog } from './catalog';
@@ -48,6 +48,8 @@ export interface RunResult {
   auditLog: { grounding: GuardrailVerdict; safety: GuardrailVerdict };
   /** Stores that were refused for now (429/403) rather than unreadable. */
   blocked: string[];
+  /** Stores with no readable catalogue, waiting for a manual read (requested by email). */
+  manualRead: string[];
 }
 
 const DEFAULT_COMPETITORS = (process.env.COMPETITOR_STORES ?? '')
@@ -113,6 +115,7 @@ export async function runAnalysis(opts: RunOptions): Promise<RunResult> {
   const unverified: string[] = [];
   const unverifiedReasons: Record<string, string> = {};
   const blocked = new Map<string, number | null>(); // store → its Retry-After
+  const manualRead = new Set<string>();
   const scrapeDeadline = deadlineAt === undefined ? undefined : deadlineAt - RESERVE_MS;
 
   let next = 0;
@@ -135,6 +138,7 @@ export async function runAnalysis(opts: RunOptions): Promise<RunResult> {
         unverified.push(competitor);
         unverifiedReasons[competitor] = String(err instanceof Error ? err.message : err).slice(0, 300);
         if (err instanceof StoreBlockedError) blocked.set(competitor, err.retryAfterMs);
+        if (err instanceof ManualReadNeededError) manualRead.add(competitor);
         log(`[scrape] ${competitor} failed → unverified: ${unverifiedReasons[competitor]}`);
       }
     }
@@ -188,6 +192,7 @@ export async function runAnalysis(opts: RunOptions): Promise<RunResult> {
     const lastKnown = await getLatestSnapshotInfo(competitor).catch(() => null);
     diffs.push({
       ...(lastKnown ? { lastKnown } : {}),
+      ...(manualRead.has(competitor) ? { needsManualRead: true } : {}),
       competitor,
       status: 'unverified',
       previousSnapshotDate: null,
@@ -242,11 +247,14 @@ export async function runAnalysis(opts: RunOptions): Promise<RunResult> {
     // Nothing was read, so there is nothing to analyse. Don't ask the model:
     // it would write generic advice with no data behind it.
     const stores = diffs.map(d => d.competitor).join(', ');
+    const manual = diffs.filter(d => manualRead.has(d.competitor));
     brief = [
       // "## Summary" is where the brief page takes its headline text from.
       '## Summary',
       '',
-      `Nothing to report this time. We couldn't read ${stores} on this check, so this brief makes no claims about ${diffs.length > 1 ? 'them' : 'it'}.`,
+      manual.length === diffs.length
+        ? `${manual.map(d => unverifiedReasons[d.competitor]).join('\n\n')} This brief makes no claims about ${diffs.length > 1 ? 'these stores' : 'the store'}.`
+        : `Nothing to report this time. We couldn't read ${stores} on this check, so this brief makes no claims about ${diffs.length > 1 ? 'them' : 'it'}.`,
       '',
       dataConfidenceSection(diff),
     ].join('\n');
@@ -323,6 +331,7 @@ export async function runAnalysis(opts: RunOptions): Promise<RunResult> {
       titleChanges: c.titleChanges.length,
       ...(unverifiedReasons[c.competitor] ? { reason: unverifiedReasons[c.competitor] } : {}),
       ...(c.lastKnown ? { lastKnown: c.lastKnown } : {}),
+      ...(c.needsManualRead ? { needsManualRead: true } : {}),
     })),
     grounding: { greenLight: grounding.greenLight, violations: grounding.violations },
     safety: {
@@ -335,7 +344,7 @@ export async function runAnalysis(opts: RunOptions): Promise<RunResult> {
   });
   log(`[archive] brief ${briefId} for ${diff.weekOf} (${greenLight ? 'GREEN' : 'not green'})`);
 
-  return { briefId, weekOf: diff.weekOf, greenLight, brief, vectorsUpserted, auditLog: { grounding, safety }, blocked: [...blocked.keys()] };
+  return { briefId, weekOf: diff.weekOf, greenLight, brief, vectorsUpserted, auditLog: { grounding, safety }, blocked: [...blocked.keys()], manualRead: [...manualRead] };
 }
 
 /** Remove a "Data Confidence" section if the model wrote one despite instructions. */
@@ -354,6 +363,8 @@ export function dataConfidenceSection(diff: StructuredDiff): string {
     .filter(isPartial)
     .map(d => (d.complete === false ? `${d.competitor} — time ran out after ${d.productCount} products` : d.competitor));
   const unverified = byStatus('unverified').map(d => {
+    // The summary above already carries the full manual-read message.
+    if (d.needsManualRead) return `${d.competitor} — no readable product catalogue (manual read available on request)`;
     const reason = diff.unverifiedReasons?.[d.competitor];
     return reason ? `${d.competitor} — ${reason}` : d.competitor;
   });

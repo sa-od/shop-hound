@@ -45,7 +45,12 @@ async function executeRun(run: RunRecord, deadlineAt: number): Promise<void> {
       retryBlocked: retriesLeft,
       log: m => console.log(`[${run.runId}] ${m}`),
     });
-    await finishRun(run.runId, { status: 'success', briefId: result.briefId, blocked: result.blocked.length > 0 });
+    await finishRun(run.runId, {
+      status: 'success',
+      briefId: result.briefId,
+      blocked: result.blocked.length > 0,
+      manualRead: result.manualRead.length > 0,
+    });
   } catch (err) {
     if (err instanceof RunBlockedError && retriesLeft) {
       const retryAt = new Date(Date.now() + retryDelayMs(run.attempt, err.retryAfterMs)!);
