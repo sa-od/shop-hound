@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { Loader2, Plus, X } from "lucide-react";
 import type { Status } from "@/lib/api";
 import { useLiveStatus } from "@/lib/status-client";
@@ -19,6 +19,13 @@ export function RunControl({ initial }: { initial: Status }) {
   const live = useLiveStatus(initial);
   const { status, queue, outcomes } = live;
   const [open, setOpen] = useState(false);
+  // Opening a brief from the panel (View brief) or going anywhere else closes it.
+  const pathname = usePathname();
+  const [openedOn, setOpenedOn] = useState(pathname);
+  if (pathname !== openedOn) {
+    setOpenedOn(pathname);
+    if (open) setOpen(false);
+  }
   const [dismissed, setDismissed] = useState<string | null>(null);
   const lastBriefRef = useRef<string | null>(initial.lastBrief?.createdAt ?? null);
 
