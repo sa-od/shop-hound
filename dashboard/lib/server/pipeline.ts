@@ -34,6 +34,8 @@ export interface RunProgress {
 }
 
 export interface RunOptions {
+  /** Why this run happened, saved on the brief (omit for local/CLI runs). */
+  trigger?: import('./briefs-store').BriefTrigger;
   /** Live progress, for the queue's step checklist. Must not throw. */
   onProgress?: (p: RunProgress) => void;
   competitors: string[];
@@ -368,6 +370,7 @@ export async function runAnalysis(opts: RunOptions): Promise<RunResult> {
   const briefId = await saveBrief({
     weekOf: diff.weekOf,
     competitorKey: diffs.map(c => c.competitor).sort().join(','),
+    ...(opts.trigger ? { trigger: opts.trigger } : {}),
     greenLight,
     briefMarkdown: brief,
     competitors: diffs.map(c => ({

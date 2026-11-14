@@ -69,6 +69,8 @@ async function executeRun(run: RunRecord, deadlineAt: number): Promise<void> {
       deadlineAt,
       retryBlocked: retriesLeft,
       onProgress: progress.report,
+      // dashboard = added or run again by a user; cron = the weekly re-check.
+      ...(run.trigger === 'dashboard' ? { trigger: 'added' as const } : run.trigger === 'cron' ? { trigger: 'weekly' as const } : {}),
       log: m => console.log(`[${run.runId}] ${m}`),
     });
     await progress.flushed(); // so a late progress write can't land after the outcome

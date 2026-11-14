@@ -224,27 +224,44 @@ export async function getDueSets(now = new Date()): Promise<TrackedSet[]> {
  */
 export async function trackingFor(competitors: string[], now = new Date()): Promise<TrackingStatus> {
   const key = competitorKeyOf(competitors);
-  const tracked = (await listTrackedSets(now)).find(s => s.competitorKey === key);
-  if (tracked) {
-    return {
-      tracked: true,
-      trackedUntil: tracked.trackedUntil,
-      nextCheck: tracked.nextCheck,
-      ...(tracked.firstReadPending ? { firstReadPending: true } : {}),
-    };
+  return (await trackingForKeys([key], now)).get(key)!;
+}
+
+/** trackingFor for many store sets at once (the stores list): a fixed number of queries, not per set. */
+export async function trackingForKeys(keys: string[], now = new Date()): Promise<Map<string, TrackingStatus>> {
+  const out = new Map<string, TrackingStatus>();
+  const trackedSets = new Map((await listTrackedSets(now)).map(s => [s.competitorKey, s]));
+  const rest: string[] = [];
+  for (const key of keys) {
+    const t = trackedSets.get(key);
+    if (t) {
+      out.set(key, {
+        tracked: true,
+        trackedUntil: t.trackedUntil,
+        nextCheck: t.nextCheck,
+        ...(t.firstReadPending ? { firstReadPending: true } : {}),
+      });
+    } else rest.push(key);
   }
+  if (rest.length === 0) return out;
 
-  const scraped = await loadScrapedStores(key.split(','));
-  if (!key.split(',').every(c => scraped.has(c))) return { tracked: false, trackedUntil: null, nextCheck: null };
-
-  const last = await db()
-    .collection(RUNS)
-    .find({ trigger: 'dashboard', status: 'success', competitorKey: key })
-    .sort({ startedAt: -1 })
-    .limit(1)
-    .next();
-  const trackedUntil = last ? new Date((last.startedAt as Date).getTime() + TRACK_DAYS * DAY_MS).toISOString() : null;
-  return { tracked: false, trackedUntil, nextCheck: null };
+  const scraped = await loadScrapedStores([...new Set(rest.flatMap(k => k.split(',')))]);
+  const readable = rest.filter(k => k.split(',').every(c => scraped.has(c)));
+  const lastRuns = readable.length
+    ? await db()
+        .collection(RUNS)
+        .aggregate<{ _id: string; at: Date }>([
+          { $match: { trigger: 'dashboard', status: 'success', competitorKey: { $in: readable } } },
+          { $group: { _id: '$competitorKey', at: { $max: '$startedAt' } } },
+        ])
+        .toArray()
+    : [];
+  const lastAt = new Map(lastRuns.map(r => [r._id, r.at]));
+  for (const key of rest) {
+    const at = lastAt.get(key);
+    out.set(key, { tracked: false, trackedUntil: at ? new Date(at.getTime() + TRACK_DAYS * DAY_MS).toISOString() : null, nextCheck: null });
+  }
+  return out;
 }
 
 function positiveInt(raw: string | undefined, fallback: number): number {
