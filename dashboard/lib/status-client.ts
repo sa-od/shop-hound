@@ -17,7 +17,7 @@ export interface Outcome {
   briefId: string | null;
   /** Finished, but the store can't be read automatically: offer the email request. */
   needsManualRead?: boolean;
-  manualRead?: { platformName: string; message: string; email: { mailto: string } };
+  manualRead?: { platformName: string; message: string; email: { mailto: string; gmail?: string } };
 }
 
 export interface LiveState {

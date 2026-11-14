@@ -58,7 +58,7 @@ export default async function BriefPage({ params }: { params: Promise<{ id: stri
               {brief.competitors.map((c) => (
                 <span key={c.competitor} className="inline-flex flex-wrap items-center gap-3">
                   <PlatformTag name={c.manualRead?.platformName} />
-                  <ManualReadLink mailto={c.manualRead?.email.mailto} email={CONTACT_EMAIL} store={c.competitor} />
+                  <ManualReadLink mailto={c.manualRead?.email.mailto} gmail={c.manualRead?.email.gmail} email={CONTACT_EMAIL} store={c.competitor} />
                 </span>
               ))}
             </div>

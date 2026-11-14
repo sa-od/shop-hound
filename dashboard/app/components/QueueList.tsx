@@ -55,7 +55,7 @@ export function QueueList({ live }: { live: LiveState }) {
                 <span className="text-ink-2">
                   <span className="font-semibold text-ink">{o.store}</span>: we’ll read it by hand and track it weekly once you email us.
                 </span>{" "}
-                <ManualReadLink mailto={o.manualRead?.email.mailto} email={status.contactEmail} store={o.store} />
+                <ManualReadLink mailto={o.manualRead?.email.mailto} gmail={o.manualRead?.email.gmail} email={status.contactEmail} store={o.store} />
               </>
             ) : (
             <>

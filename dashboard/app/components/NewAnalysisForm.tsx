@@ -89,7 +89,7 @@ export function NewAnalysisForm({ initial, autoFocus = false }: { initial: Statu
           <div className="mt-3 rounded-md border border-edge bg-shelf px-3.5 py-3 text-[13px] leading-relaxed text-ink-2">
             <PlatformTag name={manual.platformName} className="mb-2" />
             <p>{manual.message}</p>
-            <ManualReadLink mailto={manual.mailto} email={manual.contactEmail ?? live.status.contactEmail} store={manual.store} className="mt-2" />
+            <ManualReadLink mailto={manual.mailto} gmail={manual.gmail} email={manual.contactEmail ?? live.status.contactEmail} store={manual.store} className="mt-2" />
           </div>
         ) : (
           <p

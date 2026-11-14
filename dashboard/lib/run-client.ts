@@ -14,6 +14,8 @@ export interface ManualAnswer {
   platformName?: string;
   /** Ready-made email from the server; use as the href. */
   mailto?: string;
+  /** The same email as a Gmail web-compose link (absent on older servers). */
+  gmail?: string;
 }
 
 /** Light check only; the server cleans up and validates the address. */
@@ -39,7 +41,7 @@ export async function addStore(raw: string): Promise<AddResult> {
       message?: string;
       contactEmail?: string;
       platform?: { id: string; name: string };
-      email?: { mailto?: string };
+      email?: { mailto?: string; gmail?: string };
     };
     if (body.code === 'manual_read') {
       const store = body.store ?? raw.trim();
@@ -47,7 +49,7 @@ export async function addStore(raw: string): Promise<AddResult> {
       return {
         ok: false,
         code: 'manual_read',
-        manual: { store, message, contactEmail: body.contactEmail, platformName: body.platform?.name, mailto: body.email?.mailto },
+        manual: { store, message, contactEmail: body.contactEmail, platformName: body.platform?.name, mailto: body.email?.mailto, gmail: body.email?.gmail },
         error: message,
       };
     }

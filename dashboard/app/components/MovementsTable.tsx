@@ -45,7 +45,7 @@ function NoDiff({ r, contactEmail }: { r: MovementRow; contactEmail?: string | n
   if (!r.needsManualRead) return <>{noDiffText(r)}</>;
   return (
     <>
-      Can’t read automatically. <ManualReadLink mailto={r.manualRead?.email.mailto} email={contactEmail} store={r.competitor} />
+      Can’t read automatically. <ManualReadLink mailto={r.manualRead?.email.mailto} gmail={r.manualRead?.email.gmail} email={contactEmail} store={r.competitor} />
     </>
   );
 }

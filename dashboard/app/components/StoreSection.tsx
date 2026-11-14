@@ -92,7 +92,7 @@ export function StoreSection({
                 {row.manualRead?.message ??
                   "We can’t read this store automatically, but we can still track it: email us and we’ll read it by hand, send you the analysis, and keep tracking it every week like your other stores."}
               </p>
-              <ManualReadLink mailto={row.manualRead?.email.mailto} email={contactEmail} store={row.competitor} className="mt-2" />
+              <ManualReadLink mailto={row.manualRead?.email.mailto} gmail={row.manualRead?.email.gmail} email={contactEmail} store={row.competitor} className="mt-2" />
             </div>
           )}
           {row.status === "unverified" && !row.needsManualRead && (
