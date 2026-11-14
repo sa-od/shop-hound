@@ -3,10 +3,10 @@
 import { useState } from "react";
 import { Loader2, Plus } from "lucide-react";
 import type { Status } from "@/lib/api";
-import { addStore, checkOneStore } from "@/lib/run-client";
+import { addStore, checkOneStore, type ManualAnswer } from "@/lib/run-client";
 import { useLiveStatus } from "@/lib/status-client";
 import { QueueList } from "./QueueList";
-import { ManualReadLink } from "./ManualRead";
+import { ManualReadLink, PlatformTag } from "./ManualRead";
 
 /** Add one store at a time; each add joins the queue, so the next can be typed straight away. */
 export function NewAnalysisForm({ initial, autoFocus = false }: { initial: Status; autoFocus?: boolean }) {
@@ -16,7 +16,7 @@ export function NewAnalysisForm({ initial, autoFocus = false }: { initial: Statu
   const [error, setError] = useState<{ text: string; code?: string } | null>(null);
   const [added, setAdded] = useState<string | null>(null);
   // The server checked the store and can't read it automatically: an option, not an error.
-  const [manual, setManual] = useState<{ store: string; message: string; contactEmail?: string } | null>(null);
+  const [manual, setManual] = useState<ManualAnswer | null>(null);
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -87,8 +87,9 @@ export function NewAnalysisForm({ initial, autoFocus = false }: { initial: Statu
       <div id="analysis-help" aria-live="polite">
         {manual ? (
           <div className="mt-3 rounded-md border border-edge bg-shelf px-3.5 py-3 text-[13px] leading-relaxed text-ink-2">
+            <PlatformTag name={manual.platformName} className="mb-2" />
             <p>{manual.message}</p>
-            <ManualReadLink email={manual.contactEmail ?? live.status.contactEmail} store={manual.store} className="mt-2" />
+            <ManualReadLink mailto={manual.mailto} email={manual.contactEmail ?? live.status.contactEmail} store={manual.store} className="mt-2" />
           </div>
         ) : (
           <p

@@ -53,9 +53,9 @@ export function QueueList({ live }: { live: LiveState }) {
             {o.needsManualRead ? (
               <>
                 <span className="text-ink-2">
-                  Can’t read <span className="font-semibold text-ink">{o.store}</span> automatically.
+                  <span className="font-semibold text-ink">{o.store}</span>: we’ll read it by hand and track it weekly once you email us.
                 </span>{" "}
-                <ManualReadLink email={status.contactEmail} store={o.store} />
+                <ManualReadLink mailto={o.manualRead?.email.mailto} email={status.contactEmail} store={o.store} />
               </>
             ) : (
             <>

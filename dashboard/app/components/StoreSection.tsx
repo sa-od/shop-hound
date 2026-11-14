@@ -2,7 +2,7 @@ import dynamicImport from "next/dynamic";
 import type { BriefDetail } from "@/lib/api";
 import { diffFor, formatPct, formatPrice, isPartialRead, lastKnownLine, productCountText, sourceLabel, priceTickets, slug, type MovementRow } from "@/lib/brief";
 import { CatalogSnapshot } from "./CatalogSnapshot";
-import { ManualReadLink } from "./ManualRead";
+import { ManualReadLink, PlatformTag } from "./ManualRead";
 import { Card, ChangeRow, Rail, StatusTag, Ticket } from "./shelf";
 
 const BriefMarkdown = dynamicImport(() => import("./BriefMarkdown").then((m) => m.BriefMarkdown));
@@ -87,8 +87,12 @@ export function StoreSection({
             ))}
           {row.needsManualRead && (
             <div className="mt-3 text-sm text-ink-2">
-              <p>We can’t read this store automatically. We can read it by hand and email you the analysis.</p>
-              <ManualReadLink email={contactEmail} store={row.competitor} className="mt-2" />
+              <PlatformTag name={row.manualRead?.platformName} className="mb-2" />
+              <p>
+                {row.manualRead?.message ??
+                  "We can’t read this store automatically, but we can still track it: email us and we’ll read it by hand, send you the analysis, and keep tracking it every week like your other stores."}
+              </p>
+              <ManualReadLink mailto={row.manualRead?.email.mailto} email={contactEmail} store={row.competitor} className="mt-2" />
             </div>
           )}
           {row.status === "unverified" && !row.needsManualRead && (

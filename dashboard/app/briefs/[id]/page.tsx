@@ -11,6 +11,7 @@ import { BriefOverview } from "@/app/components/BriefOverview";
 import { TrackingLine } from "@/app/components/TrackingLine";
 import { Card } from "@/app/components/shelf";
 import { StoreSection } from "@/app/components/StoreSection";
+import { ManualReadLink, PlatformTag } from "@/app/components/ManualRead";
 
 const BriefMarkdown = dynamicImport(() => import("@/app/components/BriefMarkdown").then((m) => m.BriefMarkdown));
 
@@ -50,6 +51,19 @@ export default async function BriefPage({ params }: { params: Promise<{ id: stri
         brief={brief}
         linkToFull={false}
         contactEmail={CONTACT_EMAIL}
+        hideTrust={manualOnly}
+        headlineFooter={
+          manualOnly && (
+            <div className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-2 text-sm">
+              {brief.competitors.map((c) => (
+                <span key={c.competitor} className="inline-flex flex-wrap items-center gap-3">
+                  <PlatformTag name={c.manualRead?.platformName} />
+                  <ManualReadLink mailto={c.manualRead?.email.mailto} email={CONTACT_EMAIL} store={c.competitor} />
+                </span>
+              ))}
+            </div>
+          )
+        }
         asideFooter={
           tracking && !manualOnly && (
             <TrackingLine
@@ -61,33 +75,36 @@ export default async function BriefPage({ params }: { params: Promise<{ id: stri
         }
       />
 
-      <div className="mt-10 space-y-6">
-        <h2 className="font-cond text-[26px] font-extrabold tracking-tight">Changes by store</h2>
-        {!brief.diff && <p className="text-sm text-ink-3">This brief was saved before product-level changes were stored.</p>}
-        {rows.map((r) => (
-          <StoreSection
-            key={r.competitor}
-            brief={brief}
-            row={r}
-            // Baseline and unchecked stores have nothing to read beyond "none"; the card says why.
-            notes={r.status === "verified" ? notesFor(byStore, r.competitor) : null}
-            tracked={tracking?.tracked ?? null}
-            retryOn={retryOn}
-            contactEmail={CONTACT_EMAIL}
-          />
-        ))}
+      {/* No store data at all: only the headline and the email action. */}
+      {!manualOnly && (
+        <div className="mt-10 space-y-6">
+          <h2 className="font-cond text-[26px] font-extrabold tracking-tight">Changes by store</h2>
+          {!brief.diff && <p className="text-sm text-ink-3">This brief was saved before product-level changes were stored.</p>}
+          {rows.map((r) => (
+            <StoreSection
+              key={r.competitor}
+              brief={brief}
+              row={r}
+              // Baseline and unchecked stores have nothing to read beyond "none"; the card says why.
+              notes={r.status === "verified" ? notesFor(byStore, r.competitor) : null}
+              tracked={tracking?.tracked ?? null}
+              retryOn={retryOn}
+              contactEmail={CONTACT_EMAIL}
+            />
+          ))}
 
-        {rest && (
-          <Card>
-            <h2 className="font-cond text-[22px] font-extrabold tracking-tight">More from the analyst</h2>
-            <div className="mt-2 max-w-[72ch]">
-              <BriefMarkdown markdown={rest} />
-            </div>
-          </Card>
-        )}
+          {rest && (
+            <Card>
+              <h2 className="font-cond text-[22px] font-extrabold tracking-tight">More from the analyst</h2>
+              <div className="mt-2 max-w-[72ch]">
+                <BriefMarkdown markdown={rest} />
+              </div>
+            </Card>
+          )}
 
-        <AuditPanel brief={brief} />
-      </div>
+          <AuditPanel brief={brief} />
+        </div>
+      )}
     </main>
   );
 }

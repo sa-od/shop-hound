@@ -17,6 +17,7 @@ export interface Outcome {
   briefId: string | null;
   /** Finished, but the store can't be read automatically: offer the email request. */
   needsManualRead?: boolean;
+  manualRead?: { platformName: string; message: string; email: { mailto: string } };
 }
 
 export interface LiveState {
@@ -57,7 +58,7 @@ function apply(next: Status) {
       status: r ? r.status : 'done',
       error: r?.error ?? null,
       briefId: r?.briefId ?? null,
-      ...(r?.needsManualRead ? { needsManualRead: true } : {}),
+      ...(r?.needsManualRead ? { needsManualRead: true, manualRead: r.manualRead } : {}),
     });
   }
   state = { status: next, queue, outcomes: outcomes.slice(0, MAX_OUTCOMES) };

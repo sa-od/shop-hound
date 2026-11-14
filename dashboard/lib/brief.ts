@@ -220,8 +220,8 @@ export function readableViolation(text: string | undefined): string | undefined 
 
 /** A pre-filled email asking the team to read a store by hand. */
 export function manualReadHref(email: string, store: string) {
-  const subject = `Manual read request: ${store}`;
-  const body = `Hi,\n\nPlease send me the competitor analysis for ${store}. It can't be read automatically.\n\nThanks`;
+  const subject = `Please track ${store} for me`;
+  const body = `Hi,\n\nPlease read ${store} by hand and track it every week like my other stores. It can't be read automatically.\n\nThanks`;
   return `mailto:${email}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
 }
 

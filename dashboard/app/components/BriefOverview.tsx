@@ -53,6 +53,8 @@ export function BriefOverview({
   linkToFull,
   asideFooter,
   contactEmail = null,
+  headlineFooter,
+  hideTrust = false,
 }: {
   brief: BriefDetail;
   linkToFull: boolean;
@@ -60,6 +62,10 @@ export function BriefOverview({
   asideFooter?: React.ReactNode;
   /** Where manual-read requests go; email addresses in the summary become links. */
   contactEmail?: string | null;
+  /** Extra content at the bottom of the headline card (the manual-read action). */
+  headlineFooter?: React.ReactNode;
+  /** No store data at all: no audit to point to. */
+  hideTrust?: boolean;
 }) {
   const { summary, recommendations } = splitBrief(brief.briefMarkdown);
   const tickets = priceTickets(brief);
@@ -127,6 +133,8 @@ export function BriefOverview({
             </p>
           )}
 
+          {headlineFooter}
+
           {linkToFull && (
             <Link
               href={`/briefs/${brief.id}`}
@@ -157,7 +165,7 @@ export function BriefOverview({
           </Card>
         )}
         <div className="space-y-2.5 px-1">
-          <TrustLine brief={brief} />
+          {!hideTrust && <TrustLine brief={brief} />}
           {asideFooter}
         </div>
       </aside>

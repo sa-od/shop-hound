@@ -5,7 +5,16 @@ export type AddResult =
   | { ok: true; runId: string; store: string; position: number; alreadyQueued: boolean }
   | { ok: false; error: string; code?: string; manual?: undefined }
   /** The server checked the store and can't read it automatically: nothing was queued. */
-  | { ok: false; code: 'manual_read'; manual: { store: string; message: string; contactEmail?: string }; error: string };
+  | { ok: false; code: 'manual_read'; manual: ManualAnswer; error: string };
+
+export interface ManualAnswer {
+  store: string;
+  message: string;
+  contactEmail?: string;
+  platformName?: string;
+  /** Ready-made email from the server; use as the href. */
+  mailto?: string;
+}
 
 /** Light check only; the server cleans up and validates the address. */
 export function checkOneStore(raw: string): string | null {
@@ -29,11 +38,18 @@ export async function addStore(raw: string): Promise<AddResult> {
       accepted?: boolean;
       message?: string;
       contactEmail?: string;
+      platform?: { id: string; name: string };
+      email?: { mailto?: string };
     };
     if (body.code === 'manual_read') {
       const store = body.store ?? raw.trim();
       const message = body.message ?? `We can’t read ${store} automatically.`;
-      return { ok: false, code: 'manual_read', manual: { store, message, contactEmail: body.contactEmail }, error: message };
+      return {
+        ok: false,
+        code: 'manual_read',
+        manual: { store, message, contactEmail: body.contactEmail, platformName: body.platform?.name, mailto: body.email?.mailto },
+        error: message,
+      };
     }
     if (!res.ok || !body.runId) {
       return { ok: false, error: body.error ?? `Couldn’t add the store (HTTP ${res.status}). Try again in a moment.`, code: body.code };
