@@ -20,7 +20,10 @@ export interface CompetitorSummary {
   /** No readable catalogue (AI reading off): `reason` tells the user to email for a manual read. */
   needsManualRead?: boolean;
   /** Platform, message and ready-made email for the "request by email" action. */
-  manualRead?: Omit<import('./contact').ManualRead, 'platform'> & { platform: string };
+  manualRead?: Omit<import('./contact').ManualRead, 'platform' | 'email'> & {
+    platform: string;
+    email: Omit<import('./contact').ManualRead['email'], 'gmail'> & { gmail?: string }; // older briefs have no gmail link
+  };
 }
 
 export interface Verdict {

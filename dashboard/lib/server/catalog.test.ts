@@ -64,7 +64,8 @@ test('our own contact email is masked for the PII detector; other emails are not
   const { maskCompetitorDomains } = await import('./enkrypt');
   const { CONTACT_EMAIL } = await import('./contact');
   const diff = JSON.stringify({ diffs: [{ competitor: 'bombas.com' }] });
-  const out = maskCompetitorDomains(`Email ${CONTACT_EMAIL.toUpperCase()} for bombas.com. Leak: someone@else.com`, diff);
+  const out = maskCompetitorDomains(`Email ${CONTACT_EMAIL.toUpperCase()} for bombas.com. Link: to=${encodeURIComponent(CONTACT_EMAIL)}. Leak: someone@else.com`, diff);
+  assert.ok(!out.includes(encodeURIComponent(CONTACT_EMAIL)));
   assert.ok(!out.toLowerCase().includes(CONTACT_EMAIL.toLowerCase()));
   assert.match(out, /\[our contact address\]/);
   assert.match(out, /someone@else\.com/);

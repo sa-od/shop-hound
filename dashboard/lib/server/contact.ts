@@ -17,7 +17,12 @@ export interface ManualRead {
   platformName: string;
   /** Shown to the user as-is: why we can't read it, and what happens when they email. */
   message: string;
-  email: { to: string; subject: string; body: string; mailto: string };
+  /**
+   * mailto: opens the user's default mail app; gmail: opens the same email,
+   * filled in, in Gmail's web compose window (for people without a mail app
+   * set up, which is common on desktops).
+   */
+  email: { to: string; subject: string; body: string; mailto: string; gmail: string };
 }
 
 function why(store: string, p: Platform): string {
@@ -66,5 +71,6 @@ export function manualRead(store: string, p: Platform): ManualRead {
     'Thanks',
   ].join('\n');
   const mailto = `mailto:${CONTACT_EMAIL}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
-  return { platform: p.id, platformName: p.name, message, email: { to: CONTACT_EMAIL, subject, body, mailto } };
+  const gmail = `https://mail.google.com/mail/?view=cm&fs=1&to=${encodeURIComponent(CONTACT_EMAIL)}&su=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+  return { platform: p.id, platformName: p.name, message, email: { to: CONTACT_EMAIL, subject, body, mailto, gmail } };
 }

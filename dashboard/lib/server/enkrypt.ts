@@ -397,7 +397,9 @@ export function maskCompetitorDomains(rawText: string, diffContext: string): str
   // Our own contact address appears in the text we write for stores that need
   // a manual read ("email … for the results"). It is ours and intended, so it
   // is masked for the PII detector — any OTHER address is still caught.
-  const text = rawText.replace(new RegExp(CONTACT_EMAIL.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi'), '[our contact address]');
+  const esc = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  // Plain and URL-encoded (as in a mailto or Gmail link: "%40").
+  const text = rawText.replace(new RegExp(`${esc(CONTACT_EMAIL)}|${esc(encodeURIComponent(CONTACT_EMAIL))}`, 'gi'), '[our contact address]');
   let competitors: string[] = [];
   try {
     competitors = (JSON.parse(diffContext).diffs ?? []).map((d: { competitor: string }) => d.competitor);

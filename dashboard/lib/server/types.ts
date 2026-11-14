@@ -109,7 +109,7 @@ export const competitorDiffSchema = z.object({
       platform: z.string(),
       platformName: z.string(),
       message: z.string(),
-      email: z.object({ to: z.string(), subject: z.string(), body: z.string(), mailto: z.string() }),
+      email: z.object({ to: z.string(), subject: z.string(), body: z.string(), mailto: z.string(), gmail: z.string().optional() }),
     })
     .optional(),
 });

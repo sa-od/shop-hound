@@ -43,7 +43,8 @@ export interface Status {
       platform: string;
       platformName: string;
       message: string;
-      email: { to: string; subject: string; body: string; mailto: string };
+      /** mailto: default mail app · gmail: Gmail web compose, same email (absent on older data) */
+      email: { to: string; subject: string; body: string; mailto: string; gmail?: string };
     };
   } | null;
   lastBrief: { id: string; weekOf: string; greenLight: boolean; createdAt: string; competitorCount: number } | null;

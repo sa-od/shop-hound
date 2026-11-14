@@ -201,7 +201,9 @@ export async function runAnalysis(opts: RunOptions): Promise<RunResult> {
     const lastKnown = await getLatestSnapshotInfo(competitor).catch(() => null);
     diffs.push({
       ...(lastKnown ? { lastKnown } : {}),
-      ...(manualRead.has(competitor) ? { needsManualRead: true, manualRead: manualRead.get(competitor) } : {}),
+      // Only the flag goes on the diff: the diff is what the guardrails scan,
+      // and the email links are display data (stored on the brief, below).
+      ...(manualRead.has(competitor) ? { needsManualRead: true } : {}),
       competitor,
       status: 'unverified',
       previousSnapshotDate: null,
@@ -340,7 +342,7 @@ export async function runAnalysis(opts: RunOptions): Promise<RunResult> {
       titleChanges: c.titleChanges.length,
       ...(unverifiedReasons[c.competitor] ? { reason: unverifiedReasons[c.competitor] } : {}),
       ...(c.lastKnown ? { lastKnown: c.lastKnown } : {}),
-      ...(c.needsManualRead ? { needsManualRead: true, manualRead: c.manualRead } : {}),
+      ...(c.needsManualRead ? { needsManualRead: true, manualRead: manualRead.get(c.competitor) } : {}),
     })),
     grounding: { greenLight: grounding.greenLight, violations: grounding.violations },
     safety: {

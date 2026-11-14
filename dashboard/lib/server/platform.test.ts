@@ -38,4 +38,10 @@ test('the message names the platform, promises weekly tracking, and the email is
   assert.equal(m.email.subject, 'Please track shop.example for me');
   assert.match(m.email.body, /Platform: WooCommerce/);
   assert.ok(m.email.mailto.startsWith(`mailto:${m.email.to}?subject=Please%20track%20shop.example%20for%20me&body=`));
+  const g = new URL(m.email.gmail);
+  assert.equal(g.origin + g.pathname, 'https://mail.google.com/mail/');
+  assert.equal(g.searchParams.get('view'), 'cm');
+  assert.equal(g.searchParams.get('to'), m.email.to);
+  assert.equal(g.searchParams.get('su'), m.email.subject);
+  assert.equal(g.searchParams.get('body'), m.email.body);
 });
