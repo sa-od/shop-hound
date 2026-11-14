@@ -6,8 +6,20 @@ import { ChangeRow } from "./shelf";
  * there is anything to compare. Every figure comes from the snapshot.
  */
 /** `partial`: read from web pages, where stock and variants aren't known (they read as defaults), so they're left out. */
-export function CatalogSnapshot({ catalog: c, partial = false, complete }: { catalog: CatalogSummary; partial?: boolean; complete?: boolean }) {
+/** `delta`: change in product count since the last check (verified runs). */
+export function CatalogSnapshot({
+  catalog: c,
+  partial = false,
+  complete,
+  delta,
+}: {
+  catalog: CatalogSummary;
+  partial?: boolean;
+  complete?: boolean;
+  delta?: number;
+}) {
   const m = (n: number) => formatMoney(n, c.currency);
+  const whole = (n: number) => m(n).replace(/\.00$/, "");
   // Older web-page reads carry default stock figures; newer ones leave them out.
   const hasStock = !partial && c.inStock !== undefined && c.soldOut !== undefined;
   const stockPct = c.inStockPct ?? (c.productCount && c.inStock !== undefined ? Math.round((c.inStock / c.productCount) * 100) : 0);
@@ -19,11 +31,15 @@ export function CatalogSnapshot({ catalog: c, partial = false, complete }: { cat
       note:
         complete === false
           ? "At least this many: the read ran out of time"
-          : c.avgVariants && !partial
+          : delta !== undefined
+            ? delta === 0
+              ? "Same as the last check"
+              : `${delta > 0 ? "+" : "−"}${Math.abs(delta).toLocaleString()} since the last check`
+            : c.avgVariants && !partial
             ? `${c.avgVariants.toFixed(1)} variants each on average`
             : null,
     },
-    { label: "Price range", value: `${m(c.price.min)}–${m(c.price.max)}`, note: "Each product at its lowest variant price" },
+    { label: "Price range", value: `${whole(c.price.min)}–${whole(c.price.max)}`, note: "Each product at its lowest variant price" },
     { label: "Median price", value: m(c.price.median), note: null },
     ...(hasStock
       ? [

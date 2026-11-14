@@ -63,7 +63,7 @@ export function StoreSection({
               ? row.reason ?? "Couldn’t be checked this time"
               : (
                   <>
-                    {productCountText(row.productCount, row.complete)} products · {sourceLabel(row.source)}
+                    {productCountText(row.catalog?.productCount ?? row.productCount, row.complete)} products · {sourceLabel(row.source)}
                     {d?.previousSnapshotDate && (
                       <>
                         {" "}· compared with <LocalTime iso={d.previousSnapshotDate} format="calendar" />
@@ -125,6 +125,21 @@ export function StoreSection({
 
           {d && row.status === "verified" && (
             <>
+              {/* The store's catalog as read on this run, then what changed since the run before. */}
+              {row.catalog && (
+                <>
+                  <h4 className="mt-4 font-cond text-lg font-bold">Catalog</h4>
+                  <CatalogSnapshot
+                    catalog={row.catalog}
+                    partial={isPartialRead(row.source)}
+                    complete={row.complete}
+                    delta={row.catalog.addOnsExcluded ? undefined : d.newSkus.length - d.removedSkus.length}
+                  />
+                  <h4 className="mt-7 font-cond text-lg font-bold">
+                    Changes since the last check
+                  </h4>
+                </>
+              )}
               {row.total === 0 && <p className="mt-3 text-sm text-ink-2">No changes since the last check.</p>}
 
               {tickets.length > 0 && (

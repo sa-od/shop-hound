@@ -12,6 +12,9 @@ import { TrackingLine } from "@/app/components/TrackingLine";
 import { Card } from "@/app/components/shelf";
 import { StoreSection } from "@/app/components/StoreSection";
 import { ManualReadLink, PlatformTag } from "@/app/components/ManualRead";
+import { RunsTable } from "@/app/components/RunsTable";
+import { LocalTime } from "@/app/components/LocalTime";
+import { runsFor } from "../runs-data";
 
 const BriefMarkdown = dynamicImport(() => import("@/app/components/BriefMarkdown").then((m) => m.BriefMarkdown));
 
@@ -29,6 +32,9 @@ export default async function BriefPage({ params }: { params: Promise<{ id: stri
   const tracking = competitors.includes(DEMO_STORE) ? null : await trackingFor(competitors);
   const { byStore, rest } = splitBrief(brief.briefMarkdown);
   const rows = movementRows(brief);
+  // This store's readable runs, newest first; the page shows the opened run's data.
+  const runs = await runsFor(competitors);
+  const latestRun = runs[0] && runs[0].id !== brief.id && runs[0].createdAt > brief.createdAt ? runs[0] : null;
   // Stores we can't read automatically: retrying gives the same result, so no tracking line or "Add it again".
   const manualOnly = brief.competitors.length > 0 && brief.competitors.every((c) => c.needsManualRead);
   // Never read because the store refused us for now: it's retried daily, so say when.
@@ -43,8 +49,32 @@ export default async function BriefPage({ params }: { params: Promise<{ id: stri
         <ArrowLeft size={15} /> All briefs
       </Link>
 
+      {latestRun && (
+        <p role="status" className="mb-4 rounded-md border border-edge bg-stock px-4 py-2.5 text-sm text-ink-2">
+          This is an earlier run.{" "}
+          <Link href={`/briefs/${latestRun.id}`} className="font-semibold text-ink underline underline-offset-2 hover:no-underline">
+            See the latest (<LocalTime iso={latestRun.createdAt} format="shortdate" />)
+          </Link>
+        </p>
+      )}
+
       <BriefOverview
         brief={brief}
+        lower={
+          manualOnly ? null : (
+            <section>
+              <div className="mb-2.5 flex items-baseline justify-between gap-4">
+                <h2 className="font-cond text-xl font-bold">
+                  Runs <span className="text-ink-3">({runs.length})</span>
+                </h2>
+                <span className="text-xs text-ink-3">Every readable check of this store, newest first</span>
+              </div>
+              <div className="rounded-lg border border-edge bg-stock">
+                <RunsTable runs={runs} currentId={brief.id} />
+              </div>
+            </section>
+          )
+        }
         linkToFull={false}
         contactEmail={CONTACT_EMAIL}
         hideTrust={manualOnly}
@@ -74,7 +104,9 @@ export default async function BriefPage({ params }: { params: Promise<{ id: stri
       {/* No store data at all: only the headline and the email action. */}
       {!manualOnly && (
         <div className="mt-10 space-y-6">
-          <h2 className="font-cond text-[26px] font-extrabold tracking-tight">Changes by store</h2>
+          <h2 className="font-cond text-[26px] font-extrabold tracking-tight">
+            Store data <span className="text-ink-3">· <LocalTime iso={brief.createdAt} format="date" /></span>
+          </h2>
           {!brief.diff && <p className="text-sm text-ink-3">This brief was saved before product-level changes were stored.</p>}
           {rows.map((r) => (
             <StoreSection

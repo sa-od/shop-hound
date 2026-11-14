@@ -55,6 +55,7 @@ export function BriefOverview({
   contactEmail = null,
   headlineFooter,
   hideTrust = false,
+  lower,
 }: {
   brief: BriefDetail;
   linkToFull: boolean;
@@ -66,6 +67,8 @@ export function BriefOverview({
   headlineFooter?: React.ReactNode;
   /** No store data at all: no audit to point to. */
   hideTrust?: boolean;
+  /** Replaces the Movements table under the headline (the brief page's run history). */
+  lower?: React.ReactNode;
 }) {
   const { summary, recommendations } = splitBrief(brief.briefMarkdown);
   const tickets = priceTickets(brief);
@@ -157,7 +160,9 @@ export function BriefOverview({
         </div>
       </aside>
 
-      {!noneRead && (
+      {lower !== undefined ? (
+        lower && <div className="min-w-0 lg:col-start-1 lg:row-start-2">{lower}</div>
+      ) : !noneRead && (
         <section className="min-w-0 lg:col-start-1 lg:row-start-2">
           <div className="mb-2.5 flex items-baseline justify-between gap-4">
             <h2 className="font-cond text-xl font-bold">Movements</h2>
