@@ -1,8 +1,11 @@
 "use client";
 
 import Link from "next/link";
-import { Check, Loader2, TriangleAlert } from "lucide-react";
-import type { LiveState } from "@/lib/status-client";
+import { Check, Clock, Loader2, TriangleAlert } from "lucide-react";
+import { retryTime, type LiveState } from "@/lib/status-client";
+
+/** Attempts are capped at 3 by the server; the third is final. */
+const MAX_ATTEMPTS = 3;
 
 /** Stores in the queue, then the ones that finished during this visit. */
 export function QueueList({ live }: { live: LiveState }) {
@@ -12,14 +15,28 @@ export function QueueList({ live }: { live: LiveState }) {
   return (
     <ul className="mt-3 divide-y divide-[#eceef1] border-y border-[#eceef1] text-[13px]" aria-live="polite">
       {queue.map((q) => (
-        <li key={q.runId} className="flex items-center gap-2 py-2">
+        <li key={q.runId} className="flex items-start gap-2 py-2">
           {q.status === "running" ? (
-            <Loader2 size={14} className="shrink-0 animate-spin text-ink-3" />
+            <Loader2 size={14} className="mt-[2px] shrink-0 animate-spin text-ink-3" />
+          ) : q.status === "retrying" ? (
+            <Clock size={14} className="mt-[2px] shrink-0 text-warn" />
           ) : (
-            <span className="w-3.5 shrink-0 text-center text-[11px] font-semibold text-ink-3">{q.position}</span>
+            <span className="mt-[1px] w-3.5 shrink-0 text-center text-[11px] font-semibold text-ink-3">{q.position}</span>
           )}
-          <span className="font-semibold">{q.store}</span>
-          <span className="text-ink-3">{q.status === "running" ? "analysing…" : `queued (#${q.position})`}</span>
+          <span className="min-w-0">
+            <span className="font-semibold">{q.store}</span>{" "}
+            {q.status === "retrying" ? (
+              <>
+                <span className="text-warn" suppressHydrationWarning>
+                  waiting to try again {retryTime(q.retryAt)}
+                  {q.attempt ? ` (try ${q.attempt + 1} of ${MAX_ATTEMPTS})` : ""}
+                </span>
+                {q.reason && <span className="block text-xs text-ink-3">{capitalise(q.reason)}.</span>}
+              </>
+            ) : (
+              <span className="text-ink-3">{q.status === "running" ? "analysing…" : `queued (#${q.position})`}</span>
+            )}
+          </span>
         </li>
       ))}
       {outcomes.map((o) => (
@@ -53,4 +70,8 @@ export function QueueList({ live }: { live: LiveState }) {
       ))}
     </ul>
   );
+}
+
+function capitalise(s: string) {
+  return s.charAt(0).toUpperCase() + s.slice(1);
 }

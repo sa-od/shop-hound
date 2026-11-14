@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Loader2, Plus, X } from "lucide-react";
 import type { Status } from "@/lib/api";
-import { useLiveStatus } from "@/lib/status-client";
+import { retryTime, useLiveStatus } from "@/lib/status-client";
 import { NewAnalysisForm } from "./NewAnalysisForm";
 
 function shortDate(iso: string) {
@@ -34,6 +34,7 @@ export function RunControl({ initial }: { initial: Status }) {
 
   const running = queue.find((q) => q.status === "running");
   const waiting = queue.filter((q) => q.status === "queued").length;
+  const retrying = queue.filter((q) => q.status === "retrying");
 
   // A failure is shown in the strip until dismissed: one seen leaving the queue
   // during this visit, or (on load) a failed last run newer than the latest brief.
@@ -58,6 +59,13 @@ export function RunControl({ initial }: { initial: Status }) {
             <Loader2 size={13} className="animate-spin" />
             Analysing {running.store}
             {waiting > 0 && <span className="text-[#a8abb2]">· {waiting} queued</span>}
+            {retrying.length > 0 && <span className="text-[#a8abb2]">· {retrying.length} waiting to retry</span>}
+          </span>
+        ) : retrying.length > 0 ? (
+          <span className="hidden text-[#d5d7db] md:inline" aria-live="polite" suppressHydrationWarning>
+            {retrying.length === 1
+              ? `${retrying[0].store}: trying again ${retryTime(retrying[0].retryAt)}`
+              : `${retrying.length} stores waiting to try again`}
           </span>
         ) : failure ? (
           <span className="hidden text-[#ffb4b4] md:inline">Last analysis failed</span>

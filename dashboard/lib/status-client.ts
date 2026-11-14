@@ -1,6 +1,7 @@
 // Browser-side: one shared /api/status poller for the whole page, so the top
 // bar and every queue list show the same state. Polls every 5s while stores
-// are queued or running, every 15s otherwise.
+// are queued or running, every 15s otherwise (including while stores only
+// wait to retry: the poll is also what restarts them when their time comes).
 import { useState, useSyncExternalStore } from 'react';
 import type { QueueItem, Status } from './api';
 
@@ -73,7 +74,8 @@ async function poll() {
 function schedule(delay?: number) {
   clearTimeout(timer);
   if (listeners.size === 0) return;
-  timer = setTimeout(poll, delay ?? (state && state.queue.length > 0 ? BUSY_POLL_MS : IDLE_POLL_MS));
+  const busy = state?.queue.some((q) => q.status !== 'retrying');
+  timer = setTimeout(poll, delay ?? (busy ? BUSY_POLL_MS : IDLE_POLL_MS));
 }
 
 function subscribe(l: () => void) {
@@ -94,6 +96,17 @@ export function useLiveStatus(initial: Status): LiveState {
   const [seed] = useState<LiveState>(() => ({ status: initial, queue: queueOf(initial), outcomes: [] }));
   if (typeof window !== 'undefined' && !state) state = seed;
   return useSyncExternalStore(subscribe, () => state ?? seed, () => seed);
+}
+
+/** "2:20 PM" today, "Nov 15, 2:20 PM" otherwise; "shortly" once the time has passed. */
+export function retryTime(iso: string | undefined): string {
+  if (!iso) return 'later';
+  const d = new Date(iso);
+  if (d.getTime() <= Date.now()) return 'shortly';
+  const time = d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+  return d.toDateString() === new Date().toDateString()
+    ? `at ${time}`
+    : `on ${d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}, ${time}`;
 }
 
 /** Show a just-added store at once. Returns true when it was already queued or running. */

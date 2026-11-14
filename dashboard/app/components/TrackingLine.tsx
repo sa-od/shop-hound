@@ -8,6 +8,8 @@ export interface Tracking {
   tracked: boolean;
   trackedUntil: string | null;
   nextCheck: string | null;
+  /** Never read yet because the store refused us for now; retried daily. */
+  firstReadPending?: boolean;
 }
 
 function day(iso: string) {
@@ -44,7 +46,14 @@ export function TrackingLine({ tracking, competitors, unreadable }: { tracking: 
 
   let text: React.ReactNode;
   let canRunAgain = false;
-  if (tracking.tracked) {
+  if (tracking.tracked && tracking.firstReadPending) {
+    text = (
+      <>
+        We couldn’t read {competitors.length === 1 ? "this store" : "these stores"} yet.
+        {next ? ` We’ll try again on or after ${day(next)}.` : " We’ll try again at the next daily check."}
+      </>
+    );
+  } else if (tracking.tracked) {
     text = (
       <>
         Re-checked automatically every week{tracking.trackedUntil ? ` until ${day(tracking.trackedUntil)}` : ""}.

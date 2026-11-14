@@ -27,6 +27,15 @@ export default async function BriefPage({ params }: { params: Promise<{ id: stri
   const tracking = competitors.includes(DEMO_STORE) ? null : await trackingFor(competitors);
   const { byStore, rest } = splitBrief(brief.briefMarkdown);
   const rows = movementRows(brief);
+  // Never read because the store refused us for now: it's retried daily, so say when.
+  const retryOn =
+    tracking?.tracked && tracking.firstReadPending
+      ? new Date(Math.max(Date.parse(tracking.nextCheck ?? ""), Date.now()) || Date.now()).toLocaleDateString("en-US", {
+          month: "long",
+          day: "numeric",
+          timeZone: "UTC",
+        })
+      : null;
 
   return (
     <main className="mx-auto w-full max-w-[1280px] flex-1 px-4 py-6 sm:px-8 sm:py-8">
@@ -59,6 +68,7 @@ export default async function BriefPage({ params }: { params: Promise<{ id: stri
             // Baseline and unchecked stores have nothing to read beyond "none"; the card says why.
             notes={r.status === "verified" ? notesFor(byStore, r.competitor) : null}
             tracked={tracking?.tracked ?? null}
+            retryOn={retryOn}
           />
         ))}
 
