@@ -16,13 +16,17 @@ import { INJECTION_DEMO_DOMAIN } from './scraper';
  *   which bounds the weekly spend.
  * - Only stores that were scraped successfully at least once are tracked: a
  *   fake, dead or non-store site gets one brief explaining why, never a
- *   weekly bill.
+ *   weekly bill. Exception — FIRST READ PENDING: a store that refused us for
+ *   now (rate limit / block) on its last run stays tracked and is retried
+ *   daily (PENDING_RECHECK_DAYS) instead of weekly, until a read succeeds or
+ *   tracking ends.
  */
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 export const TRACK_DAYS = positiveInt(process.env.TRACK_DAYS, 28);
 export const RECHECK_DAYS = 7;
+export const PENDING_RECHECK_DAYS = 1;
 export const MAX_TRACKED_SETS = positiveInt(process.env.MAX_TRACKED_SETS, 20);
 
 export interface TrackedSet {
@@ -39,12 +43,16 @@ export interface TrackedSet {
   /** When the set is next due (approximate: a busy day pushes it to the next). */
   nextCheck: string;
   due: boolean;
+  /** Never read yet because the store refused us for now; retried daily. */
+  firstReadPending: boolean;
 }
 
 export interface TrackingStatus {
   tracked: boolean;
   trackedUntil: string | null;
   nextCheck: string | null;
+  /** Tracked, but never read yet: the store refused us for now. nextCheck is the next try. */
+  firstReadPending?: boolean;
 }
 
 /** Canonical key for a store set — the same one briefs are stored under. */
@@ -70,6 +78,8 @@ export function computeTrackedSets(args: {
   lastBriefAt: Map<string, Date>;
   /** Stores with at least one saved snapshot; omitted = don't filter. */
   scrapedStores?: Set<string>;
+  /** Never-read sets whose last run was refused for now (still worth retrying). */
+  pendingKeys?: Set<string>;
   defaultCompetitors: string[];
   now: Date;
   trackDays?: number;
@@ -86,9 +96,11 @@ export function computeTrackedSets(args: {
     competitors: string[],
     origin: TrackedSet['origin'],
     lastUserRunAt: Date | null,
+    firstReadPending = false,
   ): TrackedSet => {
     const lastBrief = args.lastBriefAt.get(competitorKey) ?? null;
-    const next = lastBrief ? new Date(lastBrief.getTime() + recheckMs) : now;
+    const interval = firstReadPending ? PENDING_RECHECK_DAYS * DAY_MS : recheckMs;
+    const next = lastBrief ? new Date(lastBrief.getTime() + interval) : now;
     return {
       competitorKey,
       competitors,
@@ -98,6 +110,7 @@ export function computeTrackedSets(args: {
       lastBriefAt: lastBrief?.toISOString() ?? null,
       nextCheck: next.toISOString(),
       due: next.getTime() <= now.getTime(),
+      firstReadPending,
     };
   };
 
@@ -105,10 +118,11 @@ export function computeTrackedSets(args: {
     .filter(r => r.lastUserRunAt.getTime() + trackMs > now.getTime()) // still in window
     .filter(r => !r.competitors.includes(INJECTION_DEMO_DOMAIN)) // the honeypot is a demo, not a store
     .filter(r => r.competitors.length > 0)
-    .filter(r => !args.scrapedStores || r.competitors.every(c => args.scrapedStores!.has(c)))
-    .sort((a, b) => b.lastUserRunAt.getTime() - a.lastUserRunAt.getTime())
+    .map(r => ({ r, read: !args.scrapedStores || r.competitors.every(c => args.scrapedStores!.has(c)) }))
+    .filter(({ r, read }) => read || (args.pendingKeys?.has(r.competitorKey) ?? false))
+    .sort((a, b) => b.r.lastUserRunAt.getTime() - a.r.lastUserRunAt.getTime())
     .slice(0, maxSets)
-    .map(r => entry(r.competitorKey, r.competitors, 'user', r.lastUserRunAt));
+    .map(({ r, read }) => entry(r.competitorKey, r.competitors, 'user', r.lastUserRunAt, !read));
 
   const sets = [...user];
   const defaultKey = competitorKeyOf(args.defaultCompetitors);
@@ -149,6 +163,20 @@ async function loadScrapedStores(stores: string[]): Promise<Set<string>> {
   return new Set(found as string[]);
 }
 
+/** Of these keys, the ones whose latest finished run ended with the store refusing us. */
+async function loadPendingKeys(keys: string[]): Promise<Set<string>> {
+  if (keys.length === 0) return new Set();
+  const rows = await db()
+    .collection(RUNS)
+    .aggregate<{ _id: string; blocked: boolean }>([
+      { $match: { competitorKey: { $in: keys }, status: { $in: ['success', 'failed'] } } },
+      { $sort: { finishedAt: -1 } },
+      { $group: { _id: '$competitorKey', blocked: { $first: { $ifNull: ['$blocked', false] } } } },
+    ])
+    .toArray();
+  return new Set(rows.filter(r => r.blocked).map(r => r._id));
+}
+
 async function loadLastBriefAt(keys: string[]): Promise<Map<string, Date>> {
   if (keys.length === 0) return new Map();
   const rows = await db()
@@ -165,11 +193,12 @@ async function loadLastBriefAt(keys: string[]): Promise<Map<string, Date>> {
 export async function listTrackedSets(now = new Date()): Promise<TrackedSet[]> {
   const userRuns = await loadUserRuns(now);
   const keys = [...userRuns.map(r => r.competitorKey), competitorKeyOf(defaultCompetitors())].filter(Boolean);
-  const [lastBriefAt, scrapedStores] = await Promise.all([
+  const [lastBriefAt, scrapedStores, pendingKeys] = await Promise.all([
     loadLastBriefAt(keys),
     loadScrapedStores([...new Set(userRuns.flatMap(r => r.competitors))]),
+    loadPendingKeys(userRuns.map(r => r.competitorKey)),
   ]);
-  return computeTrackedSets({ userRuns, lastBriefAt, scrapedStores, defaultCompetitors: defaultCompetitors(), now });
+  return computeTrackedSets({ userRuns, lastBriefAt, scrapedStores, pendingKeys, defaultCompetitors: defaultCompetitors(), now });
 }
 
 /** Tracked sets that are due now, longest-waiting first. */
@@ -186,7 +215,14 @@ export async function getDueSets(now = new Date()): Promise<TrackedSet[]> {
 export async function trackingFor(competitors: string[], now = new Date()): Promise<TrackingStatus> {
   const key = competitorKeyOf(competitors);
   const tracked = (await listTrackedSets(now)).find(s => s.competitorKey === key);
-  if (tracked) return { tracked: true, trackedUntil: tracked.trackedUntil, nextCheck: tracked.nextCheck };
+  if (tracked) {
+    return {
+      tracked: true,
+      trackedUntil: tracked.trackedUntil,
+      nextCheck: tracked.nextCheck,
+      ...(tracked.firstReadPending ? { firstReadPending: true } : {}),
+    };
+  }
 
   const scraped = await loadScrapedStores(key.split(','));
   if (!key.split(',').every(c => scraped.has(c))) return { tracked: false, trackedUntil: null, nextCheck: null };

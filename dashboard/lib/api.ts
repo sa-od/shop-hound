@@ -9,9 +9,16 @@ export type { BriefSummary, BriefDetail, CompetitorSummary, Verdict };
 export interface QueueItem {
   runId: string;
   store: string;
-  status: 'queued' | 'running';
+  /** 'retrying': the store refused us for now (rate limit / block); tried again at retryAt. */
+  status: 'queued' | 'running' | 'retrying';
   position: number;
   queuedAt: string;
+  /** status 'retrying' only. */
+  retryAt?: string;
+  /** Why it is retrying, written for the user ("the store is limiting automated requests right now"). */
+  reason?: string;
+  /** Attempts made so far (1 after the first try). */
+  attempt?: number;
 }
 
 export interface Status {

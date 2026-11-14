@@ -101,3 +101,19 @@ test('a store never scraped successfully is not tracked', () => {
   });
   assert.deepEqual(sets.map(s => s.competitorKey), ['real.com']);
 });
+
+test('a blocked, never-read store stays tracked as first-read-pending, retried daily', () => {
+  const sets = computeTrackedSets({
+    ...base,
+    userRuns: [run(['blocked.com'], 3), run(['dead.com'], 3)],
+    lastBriefAt: new Map([['blocked.com', daysAgo(0.5)]]),
+    scrapedStores: new Set(),
+    pendingKeys: new Set(['blocked.com']),
+  });
+  assert.deepEqual(sets.map(s => s.competitorKey), ['blocked.com']);
+  assert.equal(sets[0].firstReadPending, true);
+  assert.equal(sets[0].due, false); // tried 12h ago
+  assert.equal(sets[0].nextCheck, new Date(daysAgo(0.5).getTime() + DAY).toISOString());
+  const dayLater = computeTrackedSets({ ...base, userRuns: [run(['blocked.com'], 3)], lastBriefAt: new Map([['blocked.com', daysAgo(1)]]), scrapedStores: new Set(), pendingKeys: new Set(['blocked.com']) });
+  assert.equal(dayLater[0].due, true);
+});

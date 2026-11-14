@@ -1,6 +1,7 @@
 import { normalizedProductSchema, type NormalizedProduct } from './types';
 import { firecrawlEnabled, extractCatalogWithFirecrawl } from './firecrawl';
 import { safeFetch, describeFetchError } from './safe-fetch';
+import { shopifyCooldownMs, startShopifyCooldown } from './throttle';
 
 /**
  * Hybrid ingestion (PRD §5.1) — Shopify-first, Firecrawl-fallback.
@@ -42,6 +43,30 @@ export function normalizeDomain(input: string): string {
  * Shopify catalogue". Unreachable stores skip the paid Firecrawl fallback.
  */
 export class StoreUnreachableError extends Error {}
+
+/**
+ * The store refused us for now (429 rate limit, 403 block) — temporary, so
+ * the run is retried later instead of the store being written off.
+ * `retryAfterMs` is the store's own Retry-After, when it sent one.
+ */
+export class StoreBlockedError extends Error {
+  constructor(message: string, readonly retryAfterMs: number | null, readonly status: number) {
+    super(message);
+  }
+}
+
+/** Retry-After as milliseconds: delta-seconds or an HTTP date. */
+function retryAfterMs(res: { headers: { get(name: string): string | null } }): number | null {
+  const raw = res.headers.get('retry-after');
+  if (!raw) return null;
+  const secs = Number(raw);
+  if (Number.isFinite(secs)) return Math.max(0, secs * 1000);
+  const at = Date.parse(raw);
+  return Number.isFinite(at) ? Math.max(0, at - Date.now()) : null;
+}
+
+// Pause between page requests to one store — a polite crawler doesn't burst.
+const PAGE_GAP_MS = 400;
 
 /** Milliseconds left before an absolute deadline (Infinity when none). */
 export function msUntil(deadlineAt?: number): number {
@@ -92,10 +117,13 @@ async function openCatalog(host: string, deadlineAt?: number): Promise<{ base: s
     try {
       const res = await fetchCatalogPage(base, 1, budget, deadlineAt);
       reachable = true;
+      if (res.status === 429 || res.status === 403) {
+        // Limited or blocked: the www. form is the same store behind the same limits.
+        await res.body?.cancel().catch(() => {});
+        throw new StoreBlockedError(httpReason(res.status), retryAfterMs(res), res.status);
+      }
       if (!res.ok) {
         reasons.push(httpReason(res.status));
-        // Limited or blocked: the www. form is the same store behind the same limits.
-        if (res.status === 429 || res.status === 403) break;
         continue;
       }
       const data = (await res.json().catch(() => null)) as ShopifyProductsResponse | null;
@@ -105,6 +133,7 @@ async function openCatalog(host: string, deadlineAt?: number): Promise<{ base: s
       }
       return { base, first: data };
     } catch (err) {
+      if (err instanceof StoreBlockedError) throw err;
       reasons.push(describeFetchError(err));
     }
   }
@@ -122,11 +151,15 @@ export async function scrapeShopifyCatalog(domain: string, deadlineAt?: number):
     if (page === 1) {
       data = first;
     } else {
+      await new Promise(r => setTimeout(r, PAGE_GAP_MS));
       const budget = Math.min(PAGE_TIMEOUT_MS, msUntil(deadlineAt));
       if (budget <= 1_000) break; // keep the pages we have
       const res = await fetchCatalogPage(base, page, budget, deadlineAt).catch(err => {
         throw new Error(`catalogue page ${page} failed — ${describeFetchError(err)}`);
       });
+      if (res.status === 429 || res.status === 403) {
+        throw new StoreBlockedError(httpReason(res.status), retryAfterMs(res), res.status);
+      }
       if (!res.ok) throw new Error(`catalogue page ${page} failed — ${httpReason(res.status)}`);
       data = (await res.json()) as ShopifyProductsResponse;
       if (!Array.isArray(data.products)) throw new Error(`catalogue page ${page} had an unexpected shape`);
@@ -197,20 +230,36 @@ const INJECTION_DEMO_CATALOG: NormalizedProduct[] = [
 export async function scrapeCatalog(
   domain: string,
   deadlineAt?: number,
+  opts: { fallbackOnBlock?: boolean } = {},
 ): Promise<{ products: NormalizedProduct[]; source: CatalogSource }> {
   const host = normalizeDomain(domain);
   if (host === INJECTION_DEMO_DOMAIN) {
     // Deterministic guardrail-demo catalog (see fixture above)
     return { products: INJECTION_DEMO_CATALOG, source: 'shopify' };
   }
-  try {
-    const products = await scrapeShopifyCatalog(host, deadlineAt);
-    if (products.length === 0) throw new Error('the Shopify catalogue is empty');
-    return { products, source: 'shopify' };
-  } catch (shopifyErr) {
+  let shopifyErr: unknown;
+  // A recent 429 from Shopify applies to every Shopify store from this IP —
+  // asking again now would only extend the throttle.
+  const cooldown = await shopifyCooldownMs();
+  if (cooldown > 0) {
+    shopifyErr = new StoreBlockedError('the store is limiting automated requests right now', cooldown, 429);
+  } else {
+    try {
+      const products = await scrapeShopifyCatalog(host, deadlineAt);
+      if (products.length === 0) throw new Error('the Shopify catalogue is empty');
+      return { products, source: 'shopify' };
+    } catch (err) {
+      shopifyErr = err;
+    }
+  }
+  {
+    const blocked = shopifyErr instanceof StoreBlockedError ? shopifyErr : null;
+    if (blocked?.status === 429 && cooldown === 0) await startShopifyCooldown(blocked.retryAfterMs);
     // A site that can't be reached at all won't be reachable for Firecrawl
-    // either — don't pay for the attempt.
+    // either — don't pay for the attempt. A blocked store is retried later
+    // for free; the paid fallback is kept for its final attempt.
     if (shopifyErr instanceof StoreUnreachableError || !firecrawlEnabled()) throw shopifyErr;
+    if (blocked && opts.fallbackOnBlock === false) throw shopifyErr;
     const why = shopifyErr instanceof Error ? shopifyErr.message : String(shopifyErr);
     console.warn(`[scrape] ${host}: Shopify path failed (${why}), falling back to Firecrawl`);
     try {
@@ -226,6 +275,8 @@ export async function scrapeCatalog(
           ? 'reading the site took too long'
           : 'the site could not be read';
       const lead = /^not a Shopify catalogue/.test(why) ? 'not a Shopify store' : why;
+      // Still blocked → temporary: keep the block's identity so the run is retried.
+      if (blocked) throw new StoreBlockedError(`${lead}, and ${detail}`, blocked.retryAfterMs, blocked.status);
       throw new Error(`${lead}, and ${detail}`);
     }
   }

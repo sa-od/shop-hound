@@ -11,6 +11,8 @@ export const SNAPSHOTS = 'snapshots';
 export const PRODUCT_VECTORS = 'product_vectors';
 export const BRIEFS = 'briefs';
 export const RUNS = 'runs';
+/** Shared pauses after a rate limit (see throttle.ts). */
+export const THROTTLE = 'throttle';
 
 /** Atlas Vector Search index on product_vectors.embedding (see db-setup). */
 export const PRODUCT_VECTOR_INDEX = 'product_vector_index';

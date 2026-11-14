@@ -13,9 +13,11 @@ import { competitorKeyOf } from './tracking';
  *
  * Lifecycle: queued → running → success | failed. A queued run is claimed
  * atomically (oldest first) by whichever request is draining the queue.
+ * A run whose store refused us for now (429/403) goes running → retrying,
+ * and is claimable again once its retryAt passes (see start-run.ts).
  */
 
-export type RunStatus = 'queued' | 'running' | 'success' | 'failed';
+export type RunStatus = 'queued' | 'running' | 'retrying' | 'success' | 'failed';
 export type RunTrigger = 'dashboard' | 'cron' | 'cli';
 
 export interface RunRecord {
@@ -31,6 +33,13 @@ export interface RunRecord {
   finishedAt: string | null;
   error: string | null;
   briefId: string | null;
+  /** Attempts started so far (1 on the first run). */
+  attempt: number;
+  /** status 'retrying': when the next attempt may start, and why. */
+  retryAt: string | null;
+  retryReason: string | null;
+  /** Finished, but its store refused us on the final attempt (not unreadable). */
+  blocked: boolean;
 }
 
 interface RunDoc {
@@ -44,8 +53,12 @@ interface RunDoc {
   finishedAt: Date | null;
   error: string | null;
   briefId: string | null;
-  /** Set while queued or running; the per-store uniqueness index keys on it. */
+  /** Set while queued, running or retrying; the per-store uniqueness index keys on it. */
   active?: true;
+  attempt?: number;
+  retryAt?: Date | null;
+  retryReason?: string | null;
+  blocked?: boolean;
 }
 
 /**
@@ -91,6 +104,10 @@ function toRecord(d: RunDoc): RunRecord {
     finishedAt: d.finishedAt?.toISOString() ?? null,
     error: d.error,
     briefId: d.briefId,
+    attempt: d.attempt ?? 1,
+    retryAt: d.retryAt?.toISOString() ?? null,
+    retryReason: d.retryReason ?? null,
+    blocked: d.blocked ?? false,
   };
 }
 
@@ -107,6 +124,10 @@ async function sweepStale(): Promise<void> {
     runs().updateMany(
       { status: 'queued', queuedAt: { $lt: new Date(now - STALE_QUEUED_MS) } },
       { $set: { status: 'failed', finishedAt: new Date(), error: 'was never started — add the store again' }, $unset: { active: '' } },
+    ),
+    runs().updateMany(
+      { status: 'retrying', retryAt: { $lt: new Date(now - STALE_QUEUED_MS) } },
+      { $set: { status: 'failed', finishedAt: new Date(), error: 'the retry was never started — add the store again' }, $unset: { active: '' } },
     ),
   ]);
 }
@@ -137,6 +158,7 @@ export async function enqueueRun(args: { competitors: string[]; trigger: RunTrig
     error: null,
     briefId: null,
     active: true,
+    attempt: 0,
   };
   try {
     await runs().insertOne(doc);
@@ -179,6 +201,22 @@ export async function startRunNow(args: { competitors: string[]; trigger: RunTri
   return toRecord(doc);
 }
 
+/** Queued runs, and retries whose time has come. */
+const CLAIMABLE = () => ({ $or: [{ status: 'queued' as const }, { status: 'retrying' as const, retryAt: { $lte: new Date() } }] });
+
+/** Is there a run a drainer could start right now? */
+export async function hasClaimableRun(): Promise<boolean> {
+  return (await runs().countDocuments(CLAIMABLE(), { limit: 1 })) > 0;
+}
+
+/** Put a running run back in line, to be tried again at `retryAt`. */
+export async function scheduleRetry(runId: string, retryAt: Date, reason: string): Promise<void> {
+  await runs().updateOne(
+    { _id: runId, status: 'running' },
+    { $set: { status: 'retrying', retryAt, retryReason: reason.slice(0, 300), startedAt: null } },
+  );
+}
+
 /**
  * Atomically take the oldest queued run and mark it running. Returns null
  * when the queue is empty, or when another run holds the lock (the claim is
@@ -188,8 +226,8 @@ export async function claimNextRun(): Promise<RunRecord | null> {
   await sweepStale();
   try {
     const doc = await runs().findOneAndUpdate(
-      { status: 'queued' },
-      { $set: { status: 'running', startedAt: new Date() } },
+      CLAIMABLE(),
+      { $set: { status: 'running', startedAt: new Date() }, $inc: { attempt: 1 } },
       { sort: { queuedAt: 1 }, returnDocument: 'after' },
     );
     return doc ? toRecord(doc) : null;
@@ -201,7 +239,7 @@ export async function claimNextRun(): Promise<RunRecord | null> {
 
 export async function finishRun(
   runId: string,
-  outcome: { status: 'success'; briefId: string } | { status: 'failed'; error: string },
+  outcome: { status: 'success'; briefId: string; blocked?: boolean } | { status: 'failed'; error: string },
 ): Promise<void> {
   await runs().updateOne(
     { _id: runId },
@@ -211,6 +249,8 @@ export async function finishRun(
         finishedAt: new Date(),
         error: outcome.status === 'failed' ? outcome.error.slice(0, 2000) : null,
         briefId: outcome.status === 'success' ? outcome.briefId : null,
+        blocked: outcome.status === 'success' && outcome.blocked === true,
+        retryAt: null,
       },
       $unset: { active: '' },
     },
@@ -224,12 +264,15 @@ export async function getActiveRun(): Promise<RunRecord | null> {
   return doc ? toRecord(doc) : null;
 }
 
-/** Running first, then queued oldest first — the order they will be analysed in. */
+const QUEUE_ORDER: Record<string, number> = { running: 0, queued: 1, retrying: 2 };
+
+/** Running, then queued (oldest first), then retrying (soonest first). */
 export async function getQueue(): Promise<RunRecord[]> {
-  const docs = await runs().find({ status: { $in: ['running', 'queued'] } }).toArray();
-  return docs
-    .map(toRecord)
-    .sort((a, b) => (a.status === b.status ? a.queuedAt.localeCompare(b.queuedAt) : a.status === 'running' ? -1 : 1));
+  const docs = await runs().find({ status: { $in: ['running', 'queued', 'retrying'] } }).toArray();
+  return docs.map(toRecord).sort((a, b) => {
+    if (a.status !== b.status) return QUEUE_ORDER[a.status] - QUEUE_ORDER[b.status];
+    return a.status === 'retrying' ? (a.retryAt ?? '').localeCompare(b.retryAt ?? '') : a.queuedAt.localeCompare(b.queuedAt);
+  });
 }
 
 /** The most recently finished run — lets the UI show a failure instead of silence. */

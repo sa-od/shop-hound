@@ -1,8 +1,8 @@
 import 'server-only';
 import { after } from 'next/server';
 import { getDeadline } from '@vercel/functions';
-import { runAnalysis } from './pipeline';
-import { claimNextRun, enqueueRun, finishRun, getActiveRun, getQueue, type RunRecord, type RunTrigger } from './runs';
+import { runAnalysis, RunBlockedError } from './pipeline';
+import { claimNextRun, enqueueRun, finishRun, getActiveRun, getQueue, hasClaimableRun, scheduleRetry, type RunRecord, type RunTrigger } from './runs';
 
 /**
  * Hobby's function limit — both the default and the maximum. Route files that
@@ -21,6 +21,14 @@ const MIN_RUN_MS = 120_000;
 // While another request's run holds the lock, check back this often.
 const WAIT_POLL_MS = 4_000;
 
+// A store that refuses us for now (429/403) is retried after these delays —
+// or later, if its Retry-After asks for longer — before the run finishes
+// with the store unverified. Attempts = delays + 1.
+const RETRY_DELAYS_MS = [15 * 60_000, 60 * 60_000];
+
+// Gap between consecutive runs, so stores aren't read back to back.
+const RUN_GAP_MS = 3_000;
+
 /** Absolute deadline for work started by the current request. */
 function requestDeadline(requestStartedAt: number): number {
   // On Vercel the platform reports the real deadline; locally there is none,
@@ -31,14 +39,23 @@ function requestDeadline(requestStartedAt: number): number {
 
 /** Execute one claimed run to completion, recording success or failure. Never throws. */
 async function executeRun(run: RunRecord, deadlineAt: number): Promise<void> {
+  const retriesLeft = run.attempt <= RETRY_DELAYS_MS.length;
   try {
     const result = await runAnalysis({
       competitors: run.competitors,
       deadlineAt,
+      retryBlocked: retriesLeft,
       log: m => console.log(`[${run.runId}] ${m}`),
     });
-    await finishRun(run.runId, { status: 'success', briefId: result.briefId });
+    await finishRun(run.runId, { status: 'success', briefId: result.briefId, blocked: result.blocked.length > 0 });
   } catch (err) {
+    if (err instanceof RunBlockedError && retriesLeft) {
+      const delay = Math.max(RETRY_DELAYS_MS[run.attempt - 1], err.retryAfterMs ?? 0);
+      const retryAt = new Date(Date.now() + delay);
+      console.log(`[${run.runId}] blocked (${err.message}) — attempt ${run.attempt}, retrying at ${retryAt.toISOString()}`);
+      await scheduleRetry(run.runId, retryAt, err.message).catch(e => console.error(`[${run.runId}] could not schedule retry:`, e));
+      return;
+    }
     const message = err instanceof Error ? (err.stack ?? err.message) : String(err);
     console.error(`[${run.runId}] failed:`, message);
     await finishRun(run.runId, { status: 'failed', error: message }).catch(e =>
@@ -62,10 +79,12 @@ async function drainQueue(deadlineAt: number, wait: boolean): Promise<void> {
       const run = await claimNextRun();
       if (run) {
         await executeRun(run, deadlineAt);
+        await new Promise(r => setTimeout(r, RUN_GAP_MS));
         continue;
       }
-      // Nothing claimed: either the queue is empty, or another run is going.
-      if (!wait || (await getQueue()).every(r => r.status !== 'queued')) return;
+      // Nothing claimed: nothing startable (empty, or only future retries),
+      // or another run is going.
+      if (!wait || !(await hasClaimableRun())) return;
       await new Promise(r => setTimeout(r, WAIT_POLL_MS));
     }
   } catch (err) {
@@ -94,8 +113,7 @@ export async function queueRun(competitors: string[], trigger: RunTrigger): Prom
   return { run, existing, position: index === -1 ? 1 : index + 1 };
 }
 
-/** Is anything waiting while nothing runs? (cheap check for /api/status) */
+/** Is something startable waiting while nothing runs? (cheap check for /api/status) */
 export async function queueIsStalled(): Promise<boolean> {
-  const queue = await getQueue();
-  return queue.length > 0 && queue.every(r => r.status === 'queued') && !(await getActiveRun());
+  return (await hasClaimableRun()) && !(await getActiveRun());
 }

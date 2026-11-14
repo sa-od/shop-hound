@@ -1,5 +1,5 @@
 import { type CompetitorSnapshot, type CompetitorDiff, type StructuredDiff, type GuardrailVerdict } from './types';
-import { scrapeCatalog, normalizeDomain, msUntil } from './scraper';
+import { scrapeCatalog, normalizeDomain, msUntil, StoreBlockedError } from './scraper';
 import { embedProducts } from './embeddings';
 import { saveSnapshot, getPreviousSnapshot, getLatestSnapshotInfo } from './snapshot-store';
 import { summarizeCatalog } from './catalog';
@@ -24,6 +24,19 @@ export interface RunOptions {
   /** Absolute epoch ms by which the whole run must finish. Omit for no limit (local runs). */
   deadlineAt?: number;
   log?: (message: string) => void;
+  /**
+   * When every store was refused for now (429/403), stop before writing
+   * anything and throw RunBlockedError, so the caller can retry later.
+   * Off for the final attempt: then the brief records the stores as unverified.
+   */
+  retryBlocked?: boolean;
+}
+
+/** Every store refused us for now; nothing was saved. Retry after `retryAfterMs` (store's hint, if any). */
+export class RunBlockedError extends Error {
+  constructor(message: string, readonly retryAfterMs: number | null) {
+    super(message);
+  }
 }
 
 export interface RunResult {
@@ -33,6 +46,8 @@ export interface RunResult {
   brief: string;
   vectorsUpserted: number;
   auditLog: { grounding: GuardrailVerdict; safety: GuardrailVerdict };
+  /** Stores that were refused for now (429/403) rather than unreadable. */
+  blocked: string[];
 }
 
 const DEFAULT_COMPETITORS = (process.env.COMPETITOR_STORES ?? '')
@@ -62,6 +77,7 @@ export async function runAnalysis(opts: RunOptions): Promise<RunResult> {
   const snapshots: CompetitorSnapshot[] = [];
   const unverified: string[] = [];
   const unverifiedReasons: Record<string, string> = {};
+  const blocked = new Map<string, number | null>(); // store → its Retry-After
   const scrapeDeadline = deadlineAt === undefined ? undefined : deadlineAt - RESERVE_MS;
 
   let next = 0;
@@ -77,12 +93,13 @@ export async function runAnalysis(opts: RunOptions): Promise<RunResult> {
         continue;
       }
       try {
-        const { products, source } = await scrapeCatalog(competitor, scrapeDeadline);
+        const { products, source } = await scrapeCatalog(competitor, scrapeDeadline, { fallbackOnBlock: !opts.retryBlocked });
         snapshots.push({ competitor, snapshotDate, products, source });
         log(`[scrape] ${competitor}: ${products.length} products via ${source}`);
       } catch (err) {
         unverified.push(competitor);
         unverifiedReasons[competitor] = String(err instanceof Error ? err.message : err).slice(0, 300);
+        if (err instanceof StoreBlockedError) blocked.set(competitor, err.retryAfterMs);
         log(`[scrape] ${competitor} failed → unverified: ${unverifiedReasons[competitor]}`);
       }
     }
@@ -91,6 +108,12 @@ export async function runAnalysis(opts: RunOptions): Promise<RunResult> {
   // Keep input order so the brief lists competitors the way they were asked for.
   snapshots.sort((a, b) => competitors.indexOf(a.competitor) - competitors.indexOf(b.competitor));
   unverified.sort((a, b) => competitors.indexOf(a) - competitors.indexOf(b));
+
+  if (opts.retryBlocked && snapshots.length === 0 && competitors.every(c => blocked.has(c))) {
+    const hints = [...blocked.values()].filter((v): v is number => v !== null);
+    log(`[scrape] every store refused for now — run will be retried`);
+    throw new RunBlockedError(unverifiedReasons[competitors[0]] ?? 'the store is limiting automated requests', hints.length ? Math.max(...hints) : null);
+  }
 
   // ── 2. Embed → save snapshot (next week's diff baseline) + product vectors ──
   // Previous snapshots are read BEFORE today's is written, so a re-run on the
@@ -267,7 +290,7 @@ export async function runAnalysis(opts: RunOptions): Promise<RunResult> {
   });
   log(`[archive] brief ${briefId} for ${diff.weekOf} (${greenLight ? 'GREEN' : 'not green'})`);
 
-  return { briefId, weekOf: diff.weekOf, greenLight, brief, vectorsUpserted, auditLog: { grounding, safety } };
+  return { briefId, weekOf: diff.weekOf, greenLight, brief, vectorsUpserted, auditLog: { grounding, safety }, blocked: [...blocked.keys()] };
 }
 
 /** Remove a "Data Confidence" section if the model wrote one despite instructions. */

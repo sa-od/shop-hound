@@ -18,9 +18,10 @@ export async function getStatus(): Promise<Status> {
     queue: queue.map((r, i) => ({
       runId: r.runId,
       store: storeLabel(r.competitors),
-      status: r.status === 'running' ? 'running' : 'queued',
+      status: r.status === 'running' ? 'running' : r.status === 'retrying' ? 'retrying' : 'queued',
       position: i + 1,
       queuedAt: r.queuedAt,
+      ...(r.status === 'retrying' && r.retryAt ? { retryAt: r.retryAt, reason: r.retryReason ?? undefined, attempt: r.attempt } : {}),
     })),
     lastRun: lastRun
       ? {
