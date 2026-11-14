@@ -7,6 +7,8 @@ import { diffSnapshots, verifyDiffAgainstPayload } from './diff-engine';
 import { groundingCheck, safetyAudit, maskCompetitorDomains } from './enkrypt';
 import { briefsForCompetitors, saveBrief } from './briefs-store';
 import { generateGrowthBrief } from './agent';
+import { detectPlatform } from './platform';
+import { manualRead as manualReadInfo, type ManualRead } from './contact';
 
 /**
  * Competitive Intelligence pipeline — the linear high-integrity run:
@@ -50,6 +52,8 @@ export interface RunResult {
   blocked: string[];
   /** Stores with no readable catalogue, waiting for a manual read (requested by email). */
   manualRead: string[];
+  /** Their platform, message and ready-made email (first store's, for the queue line). */
+  manualReadInfo: ManualRead | null;
 }
 
 const DEFAULT_COMPETITORS = (process.env.COMPETITOR_STORES ?? '')
@@ -115,7 +119,7 @@ export async function runAnalysis(opts: RunOptions): Promise<RunResult> {
   const unverified: string[] = [];
   const unverifiedReasons: Record<string, string> = {};
   const blocked = new Map<string, number | null>(); // store → its Retry-After
-  const manualRead = new Set<string>();
+  const manualRead = new Map<string, ManualRead>();
   const scrapeDeadline = deadlineAt === undefined ? undefined : deadlineAt - RESERVE_MS;
 
   let next = 0;
@@ -138,7 +142,12 @@ export async function runAnalysis(opts: RunOptions): Promise<RunResult> {
         unverified.push(competitor);
         unverifiedReasons[competitor] = String(err instanceof Error ? err.message : err).slice(0, 300);
         if (err instanceof StoreBlockedError) blocked.set(competitor, err.retryAfterMs);
-        if (err instanceof ManualReadNeededError) manualRead.add(competitor);
+        if (err instanceof ManualReadNeededError) {
+          const info = manualReadInfo(competitor, await detectPlatform(competitor));
+          manualRead.set(competitor, info);
+          unverifiedReasons[competitor] = info.message;
+          log(`[scrape] ${competitor}: manual read needed (platform: ${info.platformName})`);
+        }
         log(`[scrape] ${competitor} failed → unverified: ${unverifiedReasons[competitor]}`);
       }
     }
@@ -192,7 +201,7 @@ export async function runAnalysis(opts: RunOptions): Promise<RunResult> {
     const lastKnown = await getLatestSnapshotInfo(competitor).catch(() => null);
     diffs.push({
       ...(lastKnown ? { lastKnown } : {}),
-      ...(manualRead.has(competitor) ? { needsManualRead: true } : {}),
+      ...(manualRead.has(competitor) ? { needsManualRead: true, manualRead: manualRead.get(competitor) } : {}),
       competitor,
       status: 'unverified',
       previousSnapshotDate: null,
@@ -253,7 +262,7 @@ export async function runAnalysis(opts: RunOptions): Promise<RunResult> {
       '## Summary',
       '',
       manual.length === diffs.length
-        ? `${manual.map(d => unverifiedReasons[d.competitor]).join('\n\n')} This brief makes no claims about ${diffs.length > 1 ? 'these stores' : 'the store'}.`
+        ? manual.map(d => unverifiedReasons[d.competitor]).join('\n\n')
         : `Nothing to report this time. We couldn't read ${stores} on this check, so this brief makes no claims about ${diffs.length > 1 ? 'them' : 'it'}.`,
       '',
       dataConfidenceSection(diff),
@@ -331,7 +340,7 @@ export async function runAnalysis(opts: RunOptions): Promise<RunResult> {
       titleChanges: c.titleChanges.length,
       ...(unverifiedReasons[c.competitor] ? { reason: unverifiedReasons[c.competitor] } : {}),
       ...(c.lastKnown ? { lastKnown: c.lastKnown } : {}),
-      ...(c.needsManualRead ? { needsManualRead: true } : {}),
+      ...(c.needsManualRead ? { needsManualRead: true, manualRead: c.manualRead } : {}),
     })),
     grounding: { greenLight: grounding.greenLight, violations: grounding.violations },
     safety: {
@@ -344,7 +353,7 @@ export async function runAnalysis(opts: RunOptions): Promise<RunResult> {
   });
   log(`[archive] brief ${briefId} for ${diff.weekOf} (${greenLight ? 'GREEN' : 'not green'})`);
 
-  return { briefId, weekOf: diff.weekOf, greenLight, brief, vectorsUpserted, auditLog: { grounding, safety }, blocked: [...blocked.keys()], manualRead: [...manualRead] };
+  return { briefId, weekOf: diff.weekOf, greenLight, brief, vectorsUpserted, auditLog: { grounding, safety }, blocked: [...blocked.keys()], manualRead: [...manualRead.keys()], manualReadInfo: [...manualRead.values()][0] ?? null };
 }
 
 /** Remove a "Data Confidence" section if the model wrote one despite instructions. */

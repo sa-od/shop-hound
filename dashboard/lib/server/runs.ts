@@ -42,6 +42,8 @@ export interface RunRecord {
   blocked: boolean;
   /** Finished, but the store has no readable catalogue: a manual read can be requested by email. */
   manualRead: boolean;
+  /** Its platform, message and ready-made email. */
+  manualReadInfo: import('./contact').ManualRead | null;
 }
 
 interface RunDoc {
@@ -62,6 +64,7 @@ interface RunDoc {
   retryReason?: string | null;
   blocked?: boolean;
   manualRead?: boolean;
+  manualReadInfo?: import('./contact').ManualRead | null;
 }
 
 /**
@@ -112,6 +115,7 @@ function toRecord(d: RunDoc): RunRecord {
     retryReason: d.retryReason ?? null,
     blocked: d.blocked ?? false,
     manualRead: d.manualRead ?? false,
+    manualReadInfo: d.manualReadInfo ?? null,
   };
 }
 
@@ -243,7 +247,9 @@ export async function claimNextRun(): Promise<RunRecord | null> {
 
 export async function finishRun(
   runId: string,
-  outcome: { status: 'success'; briefId: string; blocked?: boolean; manualRead?: boolean } | { status: 'failed'; error: string },
+  outcome:
+    | { status: 'success'; briefId: string; blocked?: boolean; manualRead?: boolean; manualReadInfo?: import('./contact').ManualRead | null }
+    | { status: 'failed'; error: string },
 ): Promise<void> {
   await runs().updateOne(
     { _id: runId },
@@ -255,6 +261,7 @@ export async function finishRun(
         briefId: outcome.status === 'success' ? outcome.briefId : null,
         blocked: outcome.status === 'success' && outcome.blocked === true,
         manualRead: outcome.status === 'success' && outcome.manualRead === true,
+        manualReadInfo: outcome.status === 'success' ? (outcome.manualReadInfo ?? null) : null,
         retryAt: null,
       },
       $unset: { active: '' },

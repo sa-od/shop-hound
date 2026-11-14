@@ -19,6 +19,8 @@ export interface CompetitorSummary {
   lastKnown?: { snapshotDate: string; productCount: number }; // unverified, but read on an earlier check
   /** No readable catalogue (AI reading off): `reason` tells the user to email for a manual read. */
   needsManualRead?: boolean;
+  /** Platform, message and ready-made email for the "request by email" action. */
+  manualRead?: Omit<import('./contact').ManualRead, 'platform'> & { platform: string };
 }
 
 export interface Verdict {

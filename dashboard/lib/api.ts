@@ -38,6 +38,13 @@ export interface Status {
     briefId: string | null;
     /** The store has no readable catalogue: show the "request by email" option (see contactEmail). */
     needsManualRead?: boolean;
+    /** Platform, message (show as-is) and ready-made email (use email.mailto). */
+    manualRead?: {
+      platform: string;
+      platformName: string;
+      message: string;
+      email: { to: string; subject: string; body: string; mailto: string };
+    };
   } | null;
   lastBrief: { id: string; weekOf: string; greenLight: boolean; createdAt: string; competitorCount: number } | null;
   totalBriefs: number;

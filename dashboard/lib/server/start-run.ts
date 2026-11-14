@@ -50,6 +50,7 @@ async function executeRun(run: RunRecord, deadlineAt: number): Promise<void> {
       briefId: result.briefId,
       blocked: result.blocked.length > 0,
       manualRead: result.manualRead.length > 0,
+      manualReadInfo: result.manualReadInfo,
     });
   } catch (err) {
     if (err instanceof RunBlockedError && retriesLeft) {

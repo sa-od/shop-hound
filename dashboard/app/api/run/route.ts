@@ -1,7 +1,8 @@
 import { NextResponse } from 'next/server';
 import { resolveStoreInput } from '@/lib/server/store-url';
-import { probeCatalog, NO_CATALOGUE_REASON } from '@/lib/server/scraper';
-import { aiReadEnabled, CONTACT_EMAIL, manualReadMessage } from '@/lib/server/contact';
+import { probeCatalog } from '@/lib/server/scraper';
+import { aiReadEnabled, CONTACT_EMAIL, manualRead } from '@/lib/server/contact';
+import { detectPlatform } from '@/lib/server/platform';
 import { queueRun } from '@/lib/server/start-run';
 import { QueueFullError } from '@/lib/server/runs';
 
@@ -13,9 +14,10 @@ export const maxDuration = 300;
  * POST /api/run { store: string } — add ONE store to the analysis queue.
  *
  * 202 { runId, store, position, existing }   store = cleaned domain; position 1 = running now / next
- * 200 { accepted: false, code: 'manual_read', store, message, contactEmail }
+ * 200 { accepted: false, code: 'manual_read', store, message, contactEmail, platform: { id, name }, email: { to, subject, body, mailto } }
  *     the store has no catalogue we can read (and AI reading is off): nothing
- *     is queued; `message` tells the user, and they can email contactEmail.
+ *     is queued; `message` says why (by platform) and that emailing starts a
+ *     manual read with weekly tracking; `email.mailto` is the ready-made email.
  * 400 { error, code }   code: multiple | invalid_url | not_found | private_address
  * 429 { error, code: 'queue_full' }
  *
@@ -37,12 +39,15 @@ export async function POST(req: Request) {
   if (!aiReadEnabled()) {
     const probe = await probeCatalog(parsed.domain).catch(() => ({ kind: 'unknown' as const }));
     if (probe.kind === 'none') {
+      const info = manualRead(parsed.domain, await detectPlatform(parsed.domain));
       return NextResponse.json({
         accepted: false,
         code: 'manual_read',
         store: parsed.domain,
-        message: manualReadMessage(parsed.domain, NO_CATALOGUE_REASON),
+        message: info.message,
         contactEmail: CONTACT_EMAIL,
+        platform: { id: info.platform, name: info.platformName },
+        email: info.email,
       });
     }
   }

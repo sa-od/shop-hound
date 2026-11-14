@@ -33,7 +33,7 @@ export async function getStatus(): Promise<Status> {
           finishedAt: lastRun.finishedAt,
           error: lastRun.status === 'failed' ? firstLine(lastRun.error) : null,
           briefId: lastRun.briefId,
-          ...(lastRun.manualRead ? { needsManualRead: true } : {}),
+          ...(lastRun.manualRead ? { needsManualRead: true, ...(lastRun.manualReadInfo ? { manualRead: lastRun.manualReadInfo } : {}) } : {}),
         }
       : null,
     lastBrief: latest

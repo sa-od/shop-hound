@@ -104,6 +104,14 @@ export const competitorDiffSchema = z.object({
   lastKnown: z.object({ snapshotDate: z.string(), productCount: z.number() }).optional(),
   // No readable catalogue, AI reading off: the user can request a manual read by email.
   needsManualRead: z.boolean().optional(),
+  manualRead: z
+    .object({
+      platform: z.string(),
+      platformName: z.string(),
+      message: z.string(),
+      email: z.object({ to: z.string(), subject: z.string(), body: z.string(), mailto: z.string() }),
+    })
+    .optional(),
 });
 export type CompetitorDiff = z.infer<typeof competitorDiffSchema>;
 

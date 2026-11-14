@@ -2,7 +2,7 @@ import { normalizedProductSchema, type NormalizedProduct } from './types';
 import { firecrawlEnabled, extractCatalogWithFirecrawl, fetchViaFirecrawl } from './firecrawl';
 import { safeFetch, describeFetchError } from './safe-fetch';
 import { shopifyCooldownMs, startShopifyCooldown } from './throttle';
-import { aiReadEnabled, manualReadMessage } from './contact';
+import { aiReadEnabled } from './contact';
 
 /**
  * Hybrid ingestion (PRD §5.1) — Shopify-first, Firecrawl-fallback.
@@ -52,8 +52,6 @@ export class StoreUnreachableError extends Error {}
  * the user can request by email. Not temporary — never retried or tracked.
  */
 export class ManualReadNeededError extends Error {}
-
-export const NO_CATALOGUE_REASON = "it doesn't publish a product catalogue we can read (it isn't a standard Shopify store)";
 
 /**
  * The store refused us for now (429 rate limit, 403 block) — temporary, so
@@ -467,9 +465,8 @@ export async function scrapeCatalog(
   const why = err instanceof Error ? err.message : String(err);
   if (!aiReadEnabled()) {
     if (blocked) throw blocked;
-    const reason = /^not a Shopify catalogue|catalogue is empty/.test(why) ? NO_CATALOGUE_REASON : `its product catalogue couldn't be read (${why})`;
     console.warn(`[scrape] ${host}: no catalogue (${why}) — AI reading is off, manual read needed`);
-    throw new ManualReadNeededError(manualReadMessage(host, reason));
+    throw new ManualReadNeededError(why);
   }
   console.warn(`[scrape] ${host}: no catalogue (${why}), AI-reading the site with Firecrawl`);
   try {
