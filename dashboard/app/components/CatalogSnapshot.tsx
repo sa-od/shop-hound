@@ -8,7 +8,9 @@ import { ChangeRow } from "./shelf";
 /** `partial`: read from web pages, where stock and variants aren't known (they read as defaults), so they're left out. */
 export function CatalogSnapshot({ catalog: c, partial = false }: { catalog: CatalogSummary; partial?: boolean }) {
   const m = (n: number) => formatMoney(n, c.currency);
-  const stockPct = c.inStockPct ?? (c.productCount ? Math.round((c.inStock / c.productCount) * 100) : 0);
+  // Older web-page reads carry default stock figures; newer ones leave them out.
+  const hasStock = !partial && c.inStock !== undefined && c.soldOut !== undefined;
+  const stockPct = c.inStockPct ?? (c.productCount && c.inStock !== undefined ? Math.round((c.inStock / c.productCount) * 100) : 0);
 
   const stats = [
     {
@@ -18,18 +20,21 @@ export function CatalogSnapshot({ catalog: c, partial = false }: { catalog: Cata
     },
     { label: "Price range", value: `${m(c.price.min)}–${m(c.price.max)}`, note: "Each product at its lowest variant price" },
     { label: "Median price", value: m(c.price.median), note: null },
-    {
-      label: "In stock",
-      value: `${stockPct}%`,
-      note: `${c.inStock.toLocaleString()} in stock · ${c.soldOut.toLocaleString()} sold out`,
-    },
+    ...(hasStock
+      ? [
+          {
+            label: "In stock",
+            value: `${stockPct}%`,
+            note: `${c.inStock!.toLocaleString()} in stock · ${c.soldOut!.toLocaleString()} sold out`,
+          },
+        ]
+      : []),
   ];
-  if (partial) stats.pop(); // "In stock" is last
   const brands = c.vendors.length > 1 ? c.vendors : [];
 
   return (
     <div className="mt-4 max-w-[880px]">
-      <dl className={`grid grid-cols-2 gap-px overflow-hidden rounded-lg border border-edge bg-edge ${partial ? "sm:grid-cols-3" : "sm:grid-cols-4"}`}>
+      <dl className={`grid grid-cols-2 gap-px overflow-hidden rounded-lg border border-edge bg-edge ${stats.length === 3 ? "sm:grid-cols-3" : "sm:grid-cols-4"}`}>
         {stats.map((s, i) => (
           // Three figures on a two-column phone grid: the last spans the row.
           <div key={s.label} className={`bg-shelf px-4 py-3 ${stats.length % 2 && i === stats.length - 1 ? "col-span-2 sm:col-span-1" : ""}`}>

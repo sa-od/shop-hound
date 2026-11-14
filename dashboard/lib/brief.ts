@@ -103,13 +103,14 @@ export interface CatalogSummary {
   currency: string;
   price: { min: number; median: number; max: number };
   priceBands: { label: string; count: number }[];
-  inStock: number;
-  soldOut: number;
+  /** Stock and variants are absent when the read couldn't see them (web-page reads). */
+  inStock?: number;
+  soldOut?: number;
   /** Whole percent, as the brief cites it. */
   inStockPct?: number;
   productTypes: { name: string; count: number }[];
   vendors: { name: string; count: number }[];
-  avgVariants: number;
+  avgVariants?: number;
   cheapest: { title: string; price: number; url: string }[];
   priciest: { title: string; price: number; url: string }[];
 }
