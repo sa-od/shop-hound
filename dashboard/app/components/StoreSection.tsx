@@ -73,6 +73,9 @@ export function StoreSection({
                     {d?.previousSnapshotDate && (
                       <>
                         {" "}· compared with <LocalTime iso={d.previousSnapshotDate} format="calendar" />
+                        {typeof d.daysSincePrevious === "number" && d.daysSincePrevious < 7 && (
+                          <> ({d.daysSincePrevious} day{d.daysSincePrevious === 1 ? "" : "s"} earlier)</>
+                        )}
                       </>
                     )}
                   </>

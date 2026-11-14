@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { ArrowRight } from "lucide-react";
 import type { BriefDetail } from "@/lib/api";
-import { formatMoney, movementRows, priceTickets, splitBrief, type CatalogSummary } from "@/lib/brief";
+import { calendarDay, diffFor, formatMoney, movementRows, priceTickets, splitBrief, type CatalogSummary } from "@/lib/brief";
 import { LocalTime } from "./LocalTime";
 import { MovementsTable } from "./MovementsTable";
 import { Card, Rail, Ticket, TrustLine } from "./shelf";
@@ -75,6 +75,11 @@ export function BriefOverview({
   const rows = movementRows(brief);
   const diffed = rows.filter((r) => r.status === "verified").length;
   const baseline = diffed === 0 && rows.some((r) => r.status === "first_snapshot");
+  // Each store is compared with its own earlier read (a week back, or less for a store first read recently).
+  const comparedDates = [
+    ...new Set(rows.filter((r) => r.status === "verified").map((r) => diffFor(brief, r.competitor)?.previousSnapshotDate).filter(Boolean)),
+  ];
+  const sinceText = comparedDates.length === 1 ? calendarDay(comparedDates[0]) : "the earlier read";
   // Nothing could be read: no claims, no advice, no table. Each store card says why.
   const noneRead = rows.length > 0 && rows.every((r) => r.status === "unverified");
   const baselineRows = rows.filter((r) => r.status === "first_snapshot" && r.catalog);
@@ -119,7 +124,7 @@ export function BriefOverview({
             <p className="mt-6 rounded-lg bg-shelf px-4 py-3.5 text-sm text-ink-2">
               {baseline
                 ? baselineText
-                : `No price changes from ${diffed} store${diffed === 1 ? "" : "s"} this week.`}
+                : `No price changes since ${sinceText}.`}
             </p>
           )}
 
