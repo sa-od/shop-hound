@@ -12,7 +12,7 @@ interface SnapshotDoc {
   _id: string;
   competitor: string;
   snapshotDate: string;
-  source: 'shopify' | 'firecrawl';
+  source: 'shopify' | 'shopify_relay' | 'firecrawl';
   productCount: number;
   products: NormalizedProduct[];
   createdAt: Date;

@@ -7,7 +7,8 @@ import type { StructuredDiff } from './types';
 export interface CompetitorSummary {
   competitor: string;
   status: string;
-  source?: 'shopify' | 'firecrawl';
+  /** shopify: own catalogue, direct · shopify_relay: own catalogue via Firecrawl · firecrawl: AI-read pages (partial) */
+  source?: 'shopify' | 'shopify_relay' | 'firecrawl';
   productCount: number;
   newSkus: number;
   priceChanges: number;

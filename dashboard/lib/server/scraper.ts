@@ -1,5 +1,5 @@
 import { normalizedProductSchema, type NormalizedProduct } from './types';
-import { firecrawlEnabled, extractCatalogWithFirecrawl } from './firecrawl';
+import { firecrawlEnabled, extractCatalogWithFirecrawl, fetchViaFirecrawl } from './firecrawl';
 import { safeFetch, describeFetchError } from './safe-fetch';
 import { shopifyCooldownMs, startShopifyCooldown } from './throttle';
 
@@ -84,54 +84,89 @@ function httpReason(status: number): string {
   return `not a Shopify catalogue (HTTP ${status})`;
 }
 
-/**
- * GET one catalogue page. On 429, honour the store's Retry-After (when short
- * enough to fit) and ask once more — politely, as the same bot.
- */
-async function fetchCatalogPage(base: string, page: number, budget: number, deadlineAt?: number) {
-  const get = (ms: number) =>
-    safeFetch(`https://${base}/products.json?limit=${PAGE_LIMIT}&page=${page}`, {
-      headers: { 'User-Agent': USER_AGENT, Accept: 'application/json' },
-      signal: AbortSignal.timeout(ms),
-    });
-  const res = await get(budget);
-  if (res.status !== 429) return res;
-  const header = Number.parseInt(res.headers.get('retry-after') ?? '', 10);
-  const waitMs = Number.isFinite(header) ? header * 1000 : 3_000;
-  if (waitMs > MAX_RETRY_AFTER_MS || msUntil(deadlineAt) < waitMs + 5_000) return res;
-  await res.body?.cancel().catch(() => {});
-  await new Promise(r => setTimeout(r, waitMs));
-  return get(Math.min(PAGE_TIMEOUT_MS, msUntil(deadlineAt)));
+const isBlockStatus = (status: number) => status === 429 || status === 403;
+
+/** One catalogue page as the store answered it. `data` is null when it isn't a catalogue. */
+interface CatalogPage {
+  status: number;
+  retryAfterMs: number | null;
+  data: ShopifyProductsResponse | null;
+}
+
+/** How a catalogue page is fetched: directly, or relayed through Firecrawl. */
+type PageFetcher = (base: string, page: number, budget: number, deadlineAt?: number) => Promise<CatalogPage>;
+
+const catalogUrl = (base: string, page: number) => `https://${base}/products.json?limit=${PAGE_LIMIT}&page=${page}`;
+
+function parseCatalog(text: string): ShopifyProductsResponse | null {
+  try {
+    const data = JSON.parse(text) as ShopifyProductsResponse;
+    return Array.isArray(data?.products) ? data : null;
+  } catch {
+    return null;
+  }
 }
 
 /**
- * Find which origin serves the catalogue: some stores only answer on www.
- * Returns the first page's response from the first origin that works.
+ * Direct read. On 429, honour the store's Retry-After (when short enough to
+ * fit) and ask once more — politely, as the same bot.
  */
-async function openCatalog(host: string, deadlineAt?: number): Promise<{ base: string; first: ShopifyProductsResponse }> {
+const directPage: PageFetcher = async (base, page, budget, deadlineAt) => {
+  const get = (ms: number) =>
+    safeFetch(catalogUrl(base, page), {
+      headers: { 'User-Agent': USER_AGENT, Accept: 'application/json' },
+      signal: AbortSignal.timeout(ms),
+    });
+  let res = await get(budget);
+  if (res.status === 429) {
+    const wait = retryAfterMs(res) ?? 3_000;
+    if (wait <= MAX_RETRY_AFTER_MS && msUntil(deadlineAt) > wait + 5_000) {
+      await res.body?.cancel().catch(() => {});
+      await new Promise(r => setTimeout(r, wait));
+      res = await get(Math.min(PAGE_TIMEOUT_MS, msUntil(deadlineAt)));
+    }
+  }
+  const retry = retryAfterMs(res);
+  if (!res.ok) {
+    await res.body?.cancel().catch(() => {});
+    return { status: res.status, retryAfterMs: retry, data: null };
+  }
+  return { status: res.status, retryAfterMs: retry, data: parseCatalog(await res.text()) };
+};
+
+/**
+ * Relayed read: Firecrawl fetches the same /products.json (plain fetch, no AI,
+ * 1 credit per page). Used when the store refuses our direct requests —
+ * the data is the store's own catalogue either way.
+ */
+const relayPage: PageFetcher = async (base, page, budget) => {
+  const r = await fetchViaFirecrawl(catalogUrl(base, page), Math.max(budget, 20_000));
+  // Firecrawl may hand back the JSON as-is, or wrapped in a browser's <pre>.
+  const raw = r.body.trim();
+  const text = raw.startsWith('{')
+    ? raw
+    : (raw.match(/<pre[^>]*>([\s\S]*?)<\/pre>/)?.[1] ?? '').replace(/&quot;/g, '"').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&');
+  return { status: r.status, retryAfterMs: null, data: r.status >= 200 && r.status < 300 ? parseCatalog(text) : null };
+};
+
+/**
+ * Find which origin serves the catalogue: some stores only answer on www.
+ * Throws StoreBlockedError (429/403), StoreUnreachableError (no connection),
+ * or Error (reachable, but not a Shopify catalogue).
+ */
+async function openCatalog(host: string, fetchPage: PageFetcher, bases: string[], deadlineAt?: number): Promise<{ base: string; first: ShopifyProductsResponse }> {
   const reasons: string[] = [];
   let reachable = false;
-  for (const base of [host, `www.${host}`]) {
+  for (const base of bases) {
     const budget = Math.min(PAGE_TIMEOUT_MS, msUntil(deadlineAt));
     if (budget <= 1_000) throw new Error('time budget exhausted before the store could be scraped');
     try {
-      const res = await fetchCatalogPage(base, 1, budget, deadlineAt);
+      const page = await fetchPage(base, 1, budget, deadlineAt);
       reachable = true;
-      if (res.status === 429 || res.status === 403) {
-        // Limited or blocked: the www. form is the same store behind the same limits.
-        await res.body?.cancel().catch(() => {});
-        throw new StoreBlockedError(httpReason(res.status), retryAfterMs(res), res.status);
-      }
-      if (!res.ok) {
-        reasons.push(httpReason(res.status));
-        continue;
-      }
-      const data = (await res.json().catch(() => null)) as ShopifyProductsResponse | null;
-      if (!data || !Array.isArray(data.products)) {
-        reasons.push('not a Shopify catalogue');
-        continue;
-      }
-      return { base, first: data };
+      // Limited or blocked: the www. form is the same store behind the same limits.
+      if (isBlockStatus(page.status)) throw new StoreBlockedError(httpReason(page.status), page.retryAfterMs, page.status);
+      if (page.data) return { base, first: page.data };
+      reasons.push(page.status >= 200 && page.status < 300 ? 'not a Shopify catalogue' : httpReason(page.status));
     } catch (err) {
       if (err instanceof StoreBlockedError) throw err;
       reasons.push(describeFetchError(err));
@@ -141,58 +176,63 @@ async function openCatalog(host: string, deadlineAt?: number): Promise<{ base: s
   throw reachable ? new Error(reason) : new StoreUnreachableError(`could not reach the store — ${reason}`);
 }
 
-export async function scrapeShopifyCatalog(domain: string, deadlineAt?: number): Promise<NormalizedProduct[]> {
-  const host = normalizeDomain(domain);
+function toProducts(host: string, data: ShopifyProductsResponse): NormalizedProduct[] {
   const products: NormalizedProduct[] = [];
-  const { base, first } = await openCatalog(host, deadlineAt);
-
-  for (let page = 1; page <= MAX_PAGES; page++) {
-    let data: ShopifyProductsResponse;
-    if (page === 1) {
-      data = first;
-    } else {
-      await new Promise(r => setTimeout(r, PAGE_GAP_MS));
-      const budget = Math.min(PAGE_TIMEOUT_MS, msUntil(deadlineAt));
-      if (budget <= 1_000) break; // keep the pages we have
-      const res = await fetchCatalogPage(base, page, budget, deadlineAt).catch(err => {
-        throw new Error(`catalogue page ${page} failed — ${describeFetchError(err)}`);
-      });
-      if (res.status === 429 || res.status === 403) {
-        throw new StoreBlockedError(httpReason(res.status), retryAfterMs(res), res.status);
-      }
-      if (!res.ok) throw new Error(`catalogue page ${page} failed — ${httpReason(res.status)}`);
-      data = (await res.json()) as ShopifyProductsResponse;
-      if (!Array.isArray(data.products)) throw new Error(`catalogue page ${page} had an unexpected shape`);
-    }
-
-    for (const p of data.products) {
-      const prices = p.variants.map(v => Number.parseFloat(v.price)).filter(n => Number.isFinite(n));
-      if (prices.length === 0) continue;
-      products.push(
-        normalizedProductSchema.parse({
-          productId: String(p.id),
-          handle: p.handle,
-          title: p.title,
-          vendor: p.vendor ?? '',
-          productType: p.product_type ?? '',
-          tags: Array.isArray(p.tags) ? p.tags : (p.tags ?? '').split(',').map(t => t.trim()).filter(Boolean),
-          price: Math.min(...prices),
-          maxPrice: Math.max(...prices),
-          currency: 'USD',
-          url: `https://${host}/products/${p.handle}`,
-          variantCount: p.variants.length,
-          available: p.variants.some(v => v.available !== false),
-        }),
-      );
-    }
-
-    if (data.products.length < PAGE_LIMIT) break; // last page
+  for (const p of data.products) {
+    const prices = p.variants.map(v => Number.parseFloat(v.price)).filter(n => Number.isFinite(n));
+    if (prices.length === 0) continue;
+    products.push(
+      normalizedProductSchema.parse({
+        productId: String(p.id),
+        handle: p.handle,
+        title: p.title,
+        vendor: p.vendor ?? '',
+        productType: p.product_type ?? '',
+        tags: Array.isArray(p.tags) ? p.tags : (p.tags ?? '').split(',').map(t => t.trim()).filter(Boolean),
+        price: Math.min(...prices),
+        maxPrice: Math.max(...prices),
+        currency: 'USD',
+        url: `https://${host}/products/${p.handle}`,
+        variantCount: p.variants.length,
+        available: p.variants.some(v => v.available !== false),
+      }),
+    );
   }
-
   return products;
 }
 
-export type CatalogSource = 'shopify' | 'firecrawl';
+/** Read a Shopify store's whole catalogue (up to MAX_PAGES pages) with the given fetcher. */
+async function readShopifyCatalog(host: string, fetchPage: PageFetcher, bases: string[], deadlineAt?: number): Promise<NormalizedProduct[]> {
+  const { base, first } = await openCatalog(host, fetchPage, bases, deadlineAt);
+  const products = toProducts(host, first);
+  let last = first;
+  for (let page = 2; page <= MAX_PAGES && last.products.length >= PAGE_LIMIT; page++) {
+    await new Promise(r => setTimeout(r, PAGE_GAP_MS));
+    const budget = Math.min(PAGE_TIMEOUT_MS, msUntil(deadlineAt));
+    if (budget <= 1_000) break; // keep the pages we have
+    const res = await fetchPage(base, page, budget, deadlineAt).catch(err => {
+      throw new Error(`catalogue page ${page} failed — ${describeFetchError(err)}`);
+    });
+    if (isBlockStatus(res.status)) throw new StoreBlockedError(httpReason(res.status), res.retryAfterMs, res.status);
+    if (!res.data) throw new Error(`catalogue page ${page} failed — ${httpReason(res.status)}`);
+    products.push(...toProducts(host, res.data));
+    last = res.data;
+  }
+  return products;
+}
+
+export async function scrapeShopifyCatalog(domain: string, deadlineAt?: number): Promise<NormalizedProduct[]> {
+  const host = normalizeDomain(domain);
+  return readShopifyCatalog(host, directPage, [host, `www.${host}`], deadlineAt);
+}
+
+/**
+ * How a store was read, kept on the snapshot and the brief:
+ * - shopify:        its own catalogue, read directly
+ * - shopify_relay:  its own catalogue, fetched through Firecrawl (store refused us)
+ * - firecrawl:      AI-read from its web pages — partial, prices may be misread
+ */
+export type CatalogSource = 'shopify' | 'shopify_relay' | 'firecrawl';
 
 // ── Guardrail demo fixture ──
 // A synthetic "store" whose catalog smuggles a prompt-injection attack inside a
@@ -237,47 +277,69 @@ export async function scrapeCatalog(
     // Deterministic guardrail-demo catalog (see fixture above)
     return { products: INJECTION_DEMO_CATALOG, source: 'shopify' };
   }
-  let shopifyErr: unknown;
-  // A recent 429 from Shopify applies to every Shopify store from this IP —
-  // asking again now would only extend the throttle.
+  const nonEmpty = (products: NormalizedProduct[]) => {
+    if (products.length === 0) throw new Error('the Shopify catalogue is empty');
+    return products;
+  };
+
+  // 1. The store's own catalogue, read directly — free and exact. Skipped
+  //    while Shopify is pausing us: a 429 applies to every Shopify store
+  //    from this IP, and asking again would only extend it.
+  let err: unknown;
   const cooldown = await shopifyCooldownMs();
   if (cooldown > 0) {
-    shopifyErr = new StoreBlockedError('the store is limiting automated requests right now', cooldown, 429);
+    err = new StoreBlockedError('the store is limiting automated requests right now', cooldown, 429);
   } else {
     try {
-      const products = await scrapeShopifyCatalog(host, deadlineAt);
-      if (products.length === 0) throw new Error('the Shopify catalogue is empty');
-      return { products, source: 'shopify' };
-    } catch (err) {
-      shopifyErr = err;
+      return { products: nonEmpty(await scrapeShopifyCatalog(host, deadlineAt)), source: 'shopify' };
+    } catch (e) {
+      err = e;
     }
   }
-  {
-    const blocked = shopifyErr instanceof StoreBlockedError ? shopifyErr : null;
-    if (blocked?.status === 429 && cooldown === 0) await startShopifyCooldown(blocked.retryAfterMs);
-    // A site that can't be reached at all won't be reachable for Firecrawl
-    // either — don't pay for the attempt. A blocked store is retried later
-    // for free; the paid fallback is kept for its final attempt.
-    if (shopifyErr instanceof StoreUnreachableError || !firecrawlEnabled()) throw shopifyErr;
-    if (blocked && opts.fallbackOnBlock === false) throw shopifyErr;
-    const why = shopifyErr instanceof Error ? shopifyErr.message : String(shopifyErr);
-    console.warn(`[scrape] ${host}: Shopify path failed (${why}), falling back to Firecrawl`);
+  if (err instanceof StoreBlockedError && err.status === 429 && cooldown === 0) await startShopifyCooldown(err.retryAfterMs);
+
+  // A site that can't be reached at all won't be reachable for Firecrawl either.
+  if (err instanceof StoreUnreachableError || !firecrawlEnabled()) throw err;
+
+  // 2. Refused (429/403)? Fetch the same catalogue through Firecrawl — the
+  //    store's exact data, ~1 credit per page.
+  if (err instanceof StoreBlockedError) {
     try {
-      const products = await extractCatalogWithFirecrawl(host, deadlineAt);
-      return { products, source: 'firecrawl' };
-    } catch (fcErr) {
-      const msg = fcErr instanceof Error ? fcErr.message : String(fcErr);
-      console.warn(`[scrape] ${host}: Firecrawl failed: ${msg}`);
-      // Shown on the brief: say what it means, not which service failed how.
-      const detail = /no usable products/.test(msg)
-        ? 'no products were found on the site'
-        : /timed out|time budget|abort/i.test(msg)
-          ? 'reading the site took too long'
-          : 'the site could not be read';
-      const lead = /^not a Shopify catalogue/.test(why) ? 'not a Shopify store' : why;
-      // Still blocked → temporary: keep the block's identity so the run is retried.
-      if (blocked) throw new StoreBlockedError(`${lead}, and ${detail}`, blocked.retryAfterMs, blocked.status);
-      throw new Error(`${lead}, and ${detail}`);
+      const products = nonEmpty(await readShopifyCatalog(host, relayPage, [host], deadlineAt));
+      console.log(`[scrape] ${host}: read via Firecrawl relay (direct: ${err.message})`);
+      return { products, source: 'shopify_relay' };
+    } catch (relayErr) {
+      console.warn(`[scrape] ${host}: relay failed: ${relayErr instanceof Error ? relayErr.message : relayErr}`);
+      // Still refused, or Firecrawl itself failed: stays a (temporary) block.
+      // Reachable but no catalogue: the block was hiding a non-Shopify site.
+      const notCatalogue =
+        relayErr instanceof Error && !(relayErr instanceof StoreBlockedError) && /^not a Shopify catalogue|catalogue is empty/.test(relayErr.message);
+      if (notCatalogue) err = relayErr;
     }
+  }
+
+  // 3. Still blocked: retry later for free; AI reading only on the final attempt.
+  const blocked = err instanceof StoreBlockedError ? err : null;
+  if (blocked && opts.fallbackOnBlock === false) throw blocked;
+
+  // 4. No catalogue to read (not Shopify, or a custom storefront): AI-read
+  //    the site's pages — partial, and labelled as such on the brief.
+  const why = err instanceof Error ? err.message : String(err);
+  console.warn(`[scrape] ${host}: no catalogue (${why}), AI-reading the site with Firecrawl`);
+  try {
+    return { products: await extractCatalogWithFirecrawl(host, deadlineAt), source: 'firecrawl' };
+  } catch (fcErr) {
+    const msg = fcErr instanceof Error ? fcErr.message : String(fcErr);
+    console.warn(`[scrape] ${host}: Firecrawl failed: ${msg}`);
+    // Shown on the brief: say what it means, not which service failed how.
+    const detail = /no usable products/.test(msg)
+      ? 'no products were found on the site'
+      : /timed out|time budget|abort/i.test(msg)
+        ? 'reading the site took too long'
+        : 'the site could not be read';
+    const lead = /^not a Shopify catalogue/.test(why) ? 'not a Shopify store' : why;
+    // Still blocked → temporary: keep the block's identity so the store stays tracked.
+    if (blocked) throw new StoreBlockedError(`${lead}, and ${detail}`, blocked.retryAfterMs, blocked.status);
+    throw new Error(`${lead}, and ${detail}`);
   }
 }

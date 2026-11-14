@@ -19,11 +19,14 @@ import { normalizedProductSchema, type NormalizedProduct } from './types';
 
 const FIRECRAWL_BASE_URL = 'https://api.firecrawl.dev/v2';
 const POLL_INTERVAL_MS = 3_000;
-const POLL_TIMEOUT_MS = 60_000; // 60s — if Firecrawl hasn't finished by then, fail fast
+// Wait up to this long for the batch, never past the run's deadline. Pages
+// finished by then are kept (a partial read beats none); measured large
+// stores took longer than the old 60s cap for 15 pages.
+const POLL_TIMEOUT_MS = 120_000;
 const MAX_PRODUCTS = 2500; // same ceiling as the Shopify scraper
 // Page budget caps credit burn (json extraction costs credits per page).
 // Override with FIRECRAWL_PAGE_BUDGET for deeper coverage on paid plans.
-const DEFAULT_PAGE_BUDGET = 15;
+const DEFAULT_PAGE_BUDGET = 10;
 const MAX_LISTING_PAGES = 6; // listing pages are dense — many products each
 
 export function firecrawlEnabled(): boolean {
@@ -173,13 +176,17 @@ export async function extractCatalogWithFirecrawl(host: string, deadlineAt?: num
   const deadline = Math.min(Date.now() + POLL_TIMEOUT_MS, deadlineAt === undefined ? Infinity : deadlineAt - 5_000);
   let results: Array<{ json?: { products?: ExtractedProduct[] } }> = [];
   for (;;) {
-    if (Date.now() > deadline) throw new Error(`Firecrawl batch ${batch.id} timed out (poll budget exhausted)`);
+    if (Date.now() > deadline) {
+      if (results.some(r => (r?.json?.products ?? []).length > 0)) {
+        console.warn(`[firecrawl] ${host}: batch still running at the deadline — keeping ${results.length} finished page(s)`);
+        break;
+      }
+      throw new Error(`Firecrawl batch ${batch.id} timed out (poll budget exhausted)`);
+    }
     await new Promise(r => setTimeout(r, POLL_INTERVAL_MS));
     const status = await firecrawlFetch(`/batch/scrape/${batch.id}`);
-    if (status.status === 'completed') {
-      results = status.data ?? [];
-      break;
-    }
+    if (Array.isArray(status.data)) results = status.data; // pages finished so far
+    if (status.status === 'completed') break;
     if (status.status === 'failed' || status.status === 'cancelled') {
       throw new Error(`Firecrawl batch ${batch.id} ${status.status}`);
     }
@@ -234,4 +241,30 @@ export async function extractCatalogWithFirecrawl(host: string, deadlineAt?: num
 
   if (products.length === 0) throw new Error(`Firecrawl extraction returned no usable products for ${host}`);
   return products;
+}
+
+/**
+ * Fetch one URL through Firecrawl as-is (no AI extraction, 1 credit) and
+ * return what the store answered. Used to read a Shopify store's own
+ * /products.json when the store refuses our direct requests: same exact data,
+ * fetched from Firecrawl's network.
+ */
+export async function fetchViaFirecrawl(
+  url: string,
+  timeoutMs: number,
+): Promise<{ status: number; contentType: string; body: string }> {
+  const apiKey = process.env.FIRECRAWL_API_KEY;
+  if (!apiKey) throw new Error('FIRECRAWL_API_KEY is not set');
+  const res = await fetch(`${FIRECRAWL_BASE_URL}/scrape`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ url, formats: ['rawHtml'], onlyMainContent: false, timeout: Math.max(5_000, timeoutMs - 3_000) }),
+    signal: AbortSignal.timeout(timeoutMs),
+  });
+  const json: any = await res.json().catch(() => null);
+  if (!res.ok || !json?.success) {
+    throw new Error(`Firecrawl fetch → ${res.status}: ${JSON.stringify(json?.error ?? json).slice(0, 200)}`);
+  }
+  const meta = json.data?.metadata ?? {};
+  return { status: Number(meta.statusCode) || 0, contentType: String(meta.contentType ?? ''), body: String(json.data?.rawHtml ?? '') };
 }

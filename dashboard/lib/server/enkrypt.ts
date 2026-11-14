@@ -438,7 +438,7 @@ export async function safetyAudit(brief: string, diffContext: string): Promise<G
   // check's full coverage; a chunk that still fails throws → fail closed.
   let hallucination: HallucinationResponse | null;
   let detect: DetectResponse;
-  let biasedChunks: string[];
+  let biasedChunks: string[] | null;
   try {
     [hallucination, detect, biasedChunks] = await Promise.all([
       hallucinationPromise,
@@ -455,7 +455,13 @@ export async function safetyAudit(brief: string, diffContext: string): Promise<G
           },
         },
       }),
-      detectBiasByChunk(enkryptText),
+      // Bias never blocks (see below), so neither does the bias detector
+      // failing — e.g. Enkrypt 503 "unreadable bias reply". The blocking
+      // detectors above still fail closed.
+      detectBiasByChunk(enkryptText).catch(err => {
+        console.warn('[safety] bias check unavailable:', String(err).slice(0, 200));
+        return null;
+      }),
     ]);
   } catch (err) {
     // FAIL CLOSED, don't kill the run: the brief persists as not-green with an
@@ -499,11 +505,14 @@ export async function safetyAudit(brief: string, diffContext: string): Promise<G
   // new product launches…" → bias=1 on every call). It is recorded and shown
   // on the audit panel, but does not withhold the green light. Injection,
   // policy, toxicity, nsfw, PII and grounding remain blocking.
-  const warnings = biasedChunks.map(chunk => {
-    const excerpt = chunk.replace(/\s+/g, ' ').trim();
-    return `possible biased framing (non-blocking): "${excerpt.length > 160 ? `${excerpt.slice(0, 160)}…` : excerpt}"`;
-  });
-  if (biasedChunks.length > 0) flagged.push('bias');
+  const warnings =
+    biasedChunks === null
+      ? ['bias check unavailable this time (Enkrypt error) — non-blocking']
+      : biasedChunks.map(chunk => {
+          const excerpt = chunk.replace(/\s+/g, ' ').trim();
+          return `possible biased framing (non-blocking): "${excerpt.length > 160 ? `${excerpt.slice(0, 160)}…` : excerpt}"`;
+        });
+  if (biasedChunks && biasedChunks.length > 0) flagged.push('bias');
   if (s.policy_violation) {
     violations.push(`policy violation${d?.policy_violation?.explanation ? `: ${d.policy_violation.explanation}` : ''}`);
     flagged.push('policy_violation');
