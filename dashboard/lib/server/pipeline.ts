@@ -3,7 +3,7 @@ import { scrapeCatalog, normalizeDomain, msUntil, StoreBlockedError, ManualReadN
 import { embedProducts, productToEmbeddingText } from './embeddings';
 import { saveSnapshot, getBaselineSnapshot, getLatestSnapshotInfo, isFullCatalog, loadReusableVectors, embeddingTextKey } from './snapshot-store';
 import { summarizeCatalog } from './catalog';
-import { diffSnapshots, verifyDiffAgainstPayload } from './diff-engine';
+import { daysBetween, diffSnapshots, verifyDiffAgainstPayload } from './diff-engine';
 import { groundingCheck, safetyAudit, maskCompetitorDomains } from './enkrypt';
 import { briefsForCompetitors, saveBrief } from './briefs-store';
 import { generateGrowthBrief } from './agent';
@@ -216,7 +216,9 @@ export async function runAnalysis(opts: RunOptions): Promise<RunResult> {
       });
     }
     const { vectors, textKeys, reused, skipped } = await vectorsFor(snapshot, embedUntil);
-    await saveSnapshot(snapshot, vectors, textKeys);
+    if (!(await saveSnapshot(snapshot, vectors, textKeys))) {
+      log(`[embed] ${snapshot.competitor}: partial read not saved — today's full read is kept as the baseline`);
+    }
     vectorsByCompetitor.set(
       snapshot.competitor,
       new Map(snapshot.products.flatMap((p, i): [string, number[]][] => (vectors[i] ? [[p.productId, vectors[i]!]] : []))),
@@ -329,16 +331,16 @@ export async function runAnalysis(opts: RunOptions): Promise<RunResult> {
     history = JSON.stringify(historyEntries);
     const trendBlock =
       historyEntries.length > 0
-        ? `\n\nVERIFIED HISTORY (previous archived briefs for these competitors):\n\`\`\`json\n${history}\n\`\`\`\nInclude a "## Week-over-Week Trends" section comparing this week against the history above. Cite ONLY numbers present in the diff or the history.`
+        ? `\n\nVERIFIED HISTORY (previous archived briefs for these competitors, one per earlier day):\n\`\`\`json\n${history}\n\`\`\`\nInclude a "## Trends" section comparing this check against the history above. Cite ONLY numbers present in the diff or the history.`
         : '';
     brief = await generateGrowthBrief(
-      `Here is this week's VERIFIED structured competitor diff. Write the weekly Growth Brief.\n\n\`\`\`json\n${JSON.stringify(diff, null, 2)}\n\`\`\`${trendBlock}`,
+      `Here is the VERIFIED structured competitor diff from this check. Write the Growth Brief.\n\n\`\`\`json\n${JSON.stringify(diff, null, 2)}\n\`\`\`${trendBlock}`,
       deadlineAt,
     );
     // Facts the code knows for certain are written by the code, not the model:
     // the model previously mislabelled stores' status here, and no audit
     // checks prose like "Unverified: x" against the diff.
-    brief = `${stripModelDataConfidence(brief).trimEnd()}\n\n${dataConfidenceSection(diff)}`;
+    brief = `${notAWeek(stripModelDataConfidence(brief), diff).trimEnd()}\n\n${dataConfidenceSection(diff)}`;
     log(`[generate] brief: ${brief.length} chars`);
   }
 
@@ -366,8 +368,7 @@ export async function runAnalysis(opts: RunOptions): Promise<RunResult> {
   const greenLight = grounding.greenLight && safety.greenLight;
 
   // ── 7. Archive EVERY brief (green or not) ──
-  // Identified by (week, competitor set): a re-run of the same set this week
-  // replaces its card in place.
+  // Every run saves its own brief (re-runs never replace one).
   const briefId = await saveBrief({
     weekOf: diff.weekOf,
     competitorKey: diffs.map(c => c.competitor).sort().join(','),
@@ -401,6 +402,26 @@ export async function runAnalysis(opts: RunOptions): Promise<RunResult> {
   return { briefId, weekOf: diff.weekOf, greenLight, brief, vectorsUpserted, auditLog: { grounding, safety }, blocked: [...blocked.keys()], manualRead: [...manualRead.keys()], manualReadInfo: [...manualRead.values()][0] ?? null };
 }
 
+/**
+ * The model is told not to call a comparison "this week" unless the reads are
+ * 7+ days apart, but it slips (seen live on a 1-day comparison: "no price
+ * changes reported this week"). When every comparison in the brief is under a
+ * week, the code — which knows the dates — corrects the phrase. Pure.
+ */
+export function notAWeek(brief: string, diff: StructuredDiff): string {
+  const verified = diff.diffs.filter(d => d.status === 'verified' && d.previousSnapshotDate);
+  if (verified.length === 0) return brief;
+  const days = verified.map(d => d.daysSincePrevious ?? daysBetween(d.previousSnapshotDate!, d.currentSnapshotDate));
+  if (days.some(n => n >= 7)) return brief;
+  const dates = [...new Set(verified.map(d => d.previousSnapshotDate!))];
+  const since = dates.length === 1 ? `since ${dates[0]}` : 'since the earlier read';
+  // Keep a capital letter where the phrase started a sentence.
+  const keepCase = (to: string) => (m: string) => (/^[A-Z]/.test(m) ? to[0].toUpperCase() + to.slice(1) : to);
+  return brief
+    .replace(/\b(?:in |during |for )?this week\b/gi, keepCase(since))
+    .replace(/\bweek[- ]over[- ]week\b/gi, keepCase('since the earlier read'));
+}
+
 /** Remove a "Data Confidence" section if the model wrote one despite instructions. */
 function stripModelDataConfidence(brief: string): string {
   return brief.replace(/\n#{1,6}\s*Data Confidence[\s\S]*?(?=\n#{1,2}\s|$)/i, '');
@@ -410,7 +431,13 @@ function stripModelDataConfidence(brief: string): string {
 export function dataConfidenceSection(diff: StructuredDiff): string {
   const byStatus = (status: CompetitorDiff['status']) => diff.diffs.filter(d => d.status === status);
   const line = (label: string, items: string[]) => `- **${label}:** ${items.length > 0 ? items.join(', ') : 'none'}`;
-  const verified = byStatus('verified').map(d => `${d.competitor} (vs ${d.previousSnapshotDate})`);
+  const gap = (d: CompetitorDiff) => {
+    const days = d.daysSincePrevious ?? (d.previousSnapshotDate ? daysBetween(d.previousSnapshotDate, d.currentSnapshotDate) : null);
+    return days === null ? '' : `, ${days} day${days === 1 ? '' : 's'} earlier`;
+  };
+  // Compared with the read from about a week earlier — or, for a store first
+  // read recently, a nearer one: the gap is stated, never assumed to be a week.
+  const verified = byStatus('verified').map(d => `${d.competitor} (vs ${d.previousSnapshotDate}${gap(d)})`);
   const isPartial = (d: CompetitorDiff) => d.source === 'firecrawl' || d.complete === false;
   const baseline = byStatus('first_snapshot').filter(d => !isPartial(d)).map(d => d.competitor);
   const partial = byStatus('first_snapshot')
@@ -424,9 +451,9 @@ export function dataConfidenceSection(diff: StructuredDiff): string {
   });
   return [
     '## Data Confidence',
-    line('Verified (week-over-week diff)', verified),
-    line('Baseline only (first snapshot this week)', baseline),
-    ...(partial.length > 0 ? [line('Partial read (not compared week over week)', partial)] : []),
-    line('Unverified this week (no claims made)', unverified),
+    line('Verified (compared with an earlier read)', verified),
+    line('Baseline only (first full read)', baseline),
+    ...(partial.length > 0 ? [line('Partial read (not compared)', partial)] : []),
+    line('Unverified on this check (no claims made)', unverified),
   ].join('\n');
 }

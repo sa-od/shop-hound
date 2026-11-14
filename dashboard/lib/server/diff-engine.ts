@@ -24,6 +24,9 @@ import type { CompetitorDiff, CompetitorSnapshot, NormalizedProduct } from './ty
 
 const CLOSEST_CONCURRENCY = 8;
 
+/** Whole days from one YYYY-MM-DD date to another. */
+export const daysBetween = (from: string, to: string) => Math.round((Date.parse(`${to}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)) / 86_400_000);
+
 export async function diffSnapshots(
   current: CompetitorSnapshot,
   previous: CompetitorSnapshot | null,
@@ -36,7 +39,9 @@ export async function diffSnapshots(
     previousSnapshotDate: previous?.snapshotDate ?? null,
     currentSnapshotDate: current.snapshotDate,
     productCount: current.products.length,
-    ...(previous ? { previousProductCount: previous.products.length } : {}),
+    ...(previous
+      ? { previousProductCount: previous.products.length, daysSincePrevious: daysBetween(previous.snapshotDate, current.snapshotDate) }
+      : {}),
   };
 
   if (!previous) {

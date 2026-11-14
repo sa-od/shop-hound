@@ -108,3 +108,24 @@ test('vector retention keeps every snapshot a future run could compare with', as
   // only recent reads: all kept
   assert.deepEqual(vectorDatesToKeep(['2026-11-14', '2026-11-15'], '2026-11-15'), ['2026-11-14', '2026-11-15']);
 });
+
+test('Data Confidence states the real gap, never assumes a week', async () => {
+  const { dataConfidenceSection } = await import('./pipeline');
+  const { daysBetween } = await import('./diff-engine');
+  assert.equal(daysBetween('2026-11-13', '2026-11-14'), 1);
+  assert.equal(daysBetween('2026-11-06', '2026-11-14'), 8);
+  const d = (competitor: string, prev: string, days?: number) => ({ competitor, status: 'verified' as const, previousSnapshotDate: prev, currentSnapshotDate: '2026-11-14', productCount: 3, ...(days !== undefined ? { daysSincePrevious: days } : {}), newSkus: [], removedSkus: [], priceChanges: [], titleChanges: [] });
+  const s = dataConfidenceSection({ weekOf: '2026-11-14', unverified: [], unverifiedReasons: {}, diffs: [d('allbirds.com', '2026-11-13', 1), d('goodr.com', '2026-11-06')] });
+  assert.match(s, /allbirds\.com \(vs 2026-11-13, 1 day earlier\)/);
+  assert.match(s, /goodr\.com \(vs 2026-11-06, 8 days earlier\)/); // older diffs: derived from the dates
+  assert.doesNotMatch(s, /week/i);
+});
+
+test('"this week" is corrected when the comparison is under a week', async () => {
+  const { notAWeek } = await import('./pipeline');
+  const v = (prev: string, days: number) => ({ weekOf: '2026-11-14', unverified: [], unverifiedReasons: {}, diffs: [{ competitor: 'a.com', status: 'verified' as const, previousSnapshotDate: prev, currentSnapshotDate: '2026-11-14', productCount: 1, daysSincePrevious: days, newSkus: [], removedSkus: [], priceChanges: [], titleChanges: [] }] });
+  assert.equal(notAWeek('No price changes reported this week. Week-over-week it shrank.', v('2026-11-13', 1)), 'No price changes reported since 2026-11-13. Since the earlier read it shrank.');
+  assert.equal(notAWeek('No price changes in this week.', v('2026-11-13', 1)), 'No price changes since 2026-11-13.');
+  assert.equal(notAWeek('No price changes this week.', v('2026-11-06', 8)), 'No price changes this week.'); // a real week: untouched
+  assert.equal(notAWeek('Re-checked weekly.', v('2026-11-13', 1)), 'Re-checked weekly.');
+});

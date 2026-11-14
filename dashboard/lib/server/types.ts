@@ -97,6 +97,8 @@ export const competitorDiffSchema = z.object({
   productCount: z.number(),
   /** Products in the read it was compared with (verified only). */
   previousProductCount: z.number().optional(),
+  /** Whole days between that read and this one (verified only): 7+ is a weekly comparison. */
+  daysSincePrevious: z.number().optional(),
   newSkus: z.array(skuSummarySchema),
   removedSkus: z.array(skuSummarySchema),
   priceChanges: z.array(priceChangeSchema),

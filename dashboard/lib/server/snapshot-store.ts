@@ -90,9 +90,16 @@ const VECTOR_WRITE_BATCH = 500;
  * `vectors[i]` may be null (no time to embed it): that product just has no
  * vector, so it is never offered as a new product's closest match.
  */
-export async function saveSnapshot(snapshot: CompetitorSnapshot, vectors: (number[] | null)[], textKeys: string[] = []): Promise<void> {
+export async function saveSnapshot(snapshot: CompetitorSnapshot, vectors: (number[] | null)[], textKeys: string[] = []): Promise<boolean> {
   const { competitor, snapshotDate } = snapshot;
   const id = snapshotId(competitor, snapshotDate);
+  // Snapshots are one per day, and re-runs are common: a partial read (time
+  // ran out, or AI-read) must never replace the day's FULL read — it would
+  // take away next week's baseline, which only full reads can be.
+  if (!isFullCatalog(snapshot.source, snapshot.complete)) {
+    const existing = await db().collection<SnapshotDoc>(SNAPSHOTS).findOne({ _id: id }, { projection: { source: 1, complete: 1 } });
+    if (existing && isFullCatalog(existing.source, existing.complete)) return false;
+  }
   const split = snapshot.products.length > PART_SIZE;
   const partsColl = db().collection<SnapshotPartDoc>(SNAPSHOT_PARTS);
   // Parts first, then the document that points at them, so a reader never
@@ -150,6 +157,7 @@ export async function saveSnapshot(snapshot: CompetitorSnapshot, vectors: (numbe
     .distinct('snapshotDate', { competitor })
     .then(dates => vectorDatesToKeep(dates as string[], snapshotDate));
   await coll.deleteMany({ competitor, snapshotDate: { $nin: keepDates } });
+  return true;
 }
 
 /**
