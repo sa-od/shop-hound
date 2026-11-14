@@ -47,6 +47,7 @@ const STATUS: Record<string, { label: string; cls: string }> = {
   verified: { label: "Verified", cls: "bg-ok-soft text-ok" },
   first_snapshot: { label: "Baseline", cls: "bg-info-soft text-info" },
   unverified: { label: "Unverified", cls: "bg-warn-soft text-warn" },
+  manual: { label: "Can’t read automatically", cls: "bg-shelf text-ink-2" },
 };
 
 export function StatusTag({ status }: { status: string }) {

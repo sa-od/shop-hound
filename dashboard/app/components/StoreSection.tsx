@@ -1,7 +1,8 @@
 import dynamicImport from "next/dynamic";
 import type { BriefDetail } from "@/lib/api";
-import { diffFor, formatPct, formatPrice, isPartialRead, lastKnownLine, sourceLabel, priceTickets, slug, type MovementRow } from "@/lib/brief";
+import { diffFor, formatPct, formatPrice, isPartialRead, lastKnownLine, productCountText, sourceLabel, priceTickets, slug, type MovementRow } from "@/lib/brief";
 import { CatalogSnapshot } from "./CatalogSnapshot";
+import { ManualReadLink } from "./ManualRead";
 import { Card, ChangeRow, Rail, StatusTag, Ticket } from "./shelf";
 
 const BriefMarkdown = dynamicImport(() => import("./BriefMarkdown").then((m) => m.BriefMarkdown));
@@ -35,12 +36,15 @@ export function StoreSection({
   notes,
   tracked = null,
   retryOn = null,
+  contactEmail = null,
 }: {
   brief: BriefDetail;
   row: MovementRow;
   notes: string | null;
   tracked?: boolean | null;
   retryOn?: string | null;
+  /** Where manual-read requests go (from the server's config). */
+  contactEmail?: string | null;
 }) {
   const d = diffFor(brief, row.competitor);
   const tickets = priceTickets(brief).filter((t) => t.competitor === row.competitor);
@@ -51,14 +55,16 @@ export function StoreSection({
         <div className="min-w-0">
           <h3 className="font-cond text-[22px] font-bold leading-tight">{row.competitor}</h3>
           <p className="text-xs text-ink-3">
-            {row.status === "unverified"
+            {row.needsManualRead
+              ? "No product catalogue we can read"
+              : row.status === "unverified"
               ? row.reason ?? "Couldn’t be checked this time"
-              : `${row.productCount.toLocaleString()} products · ${sourceLabel(row.source)}${
+              : `${productCountText(row.productCount, row.complete)} products · ${sourceLabel(row.source)}${
                   d?.previousSnapshotDate ? ` · compared with ${d.previousSnapshotDate}` : ""
                 }`}
           </p>
         </div>
-        <StatusTag status={row.status} />
+        <StatusTag status={row.needsManualRead ? "manual" : row.status} />
       </div>
 
       {row.status !== "unverified" && isPartialRead(row.source) && (
@@ -74,12 +80,18 @@ export function StoreSection({
             (row.catalog ? (
               <>
                 <p className="mt-3 text-sm text-ink-2">First check: here’s their catalog today. Changes show from the next check.</p>
-                <CatalogSnapshot catalog={row.catalog} partial={isPartialRead(row.source)} />
+                <CatalogSnapshot catalog={row.catalog} partial={isPartialRead(row.source)} complete={row.complete} />
               </>
             ) : (
               <p className="mt-3 text-sm text-ink-2">First check for this store: its catalog is saved as the baseline. Changes show from the next check.</p>
             ))}
-          {row.status === "unverified" && (
+          {row.needsManualRead && (
+            <div className="mt-3 text-sm text-ink-2">
+              <p>We can’t read this store automatically. We can read it by hand and email you the analysis.</p>
+              <ManualReadLink email={contactEmail} store={row.competitor} className="mt-2" />
+            </div>
+          )}
+          {row.status === "unverified" && !row.needsManualRead && (
             <p className="mt-3 text-sm text-ink-2">
               Nothing from this store is in the brief.
               {row.lastKnown && ` ${lastKnownLine(row.lastKnown)}.`}

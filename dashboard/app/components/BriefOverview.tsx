@@ -6,7 +6,9 @@ import { formatWeek } from "@/lib/utils";
 import { MovementsTable } from "./MovementsTable";
 import { Card, Rail, Ticket, TrustLine } from "./shelf";
 
-/** Renders `**bold**` in the short summary and action lines; the rest is plain text. */
+const EMAIL = /([\w.+-]+@[\w-]+(?:\.[\w-]+)+)/;
+
+/** Renders `**bold**` in the short summary and action lines, and email addresses as links; the rest is plain text. */
 export function Inline({ text }: { text: string }) {
   return (
     <>
@@ -16,7 +18,18 @@ export function Inline({ text }: { text: string }) {
             {part.slice(2, -2)}
           </strong>
         ) : (
-          part.replace(/[*_`]/g, "")
+          part
+            .replace(/[*_`]/g, "")
+            .split(EMAIL)
+            .map((bit, j) =>
+              j % 2 ? (
+                <a key={`${i}-${j}`} href={`mailto:${bit}`} className="font-semibold text-ink underline underline-offset-2 hover:no-underline">
+                  {bit}
+                </a>
+              ) : (
+                bit
+              ),
+            )
         ),
       )}
     </>
@@ -39,11 +52,14 @@ export function BriefOverview({
   brief,
   linkToFull,
   asideFooter,
+  contactEmail = null,
 }: {
   brief: BriefDetail;
   linkToFull: boolean;
   /** Extra quiet lines under the trust line (the brief page's tracking status). */
   asideFooter?: React.ReactNode;
+  /** Where manual-read requests go; email addresses in the summary become links. */
+  contactEmail?: string | null;
 }) {
   const { summary, recommendations } = splitBrief(brief.briefMarkdown);
   const tickets = priceTickets(brief);
@@ -154,7 +170,7 @@ export function BriefOverview({
               {rows.length} store{rows.length === 1 ? "" : "s"} · sorted by size of change
             </span>
           </div>
-          <MovementsTable rows={rows} briefId={brief.id} />
+          <MovementsTable rows={rows} briefId={brief.id} contactEmail={contactEmail} />
         </section>
       )}
     </div>

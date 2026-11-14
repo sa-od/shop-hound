@@ -182,9 +182,9 @@ export function formatMoney(n: number, currency?: string) {
 }
 
 /** "429 products · $12.00–$98.00, median $35.00" */
-export function catalogLine(c: CatalogSummary) {
+export function catalogLine(c: CatalogSummary, complete?: boolean) {
   const m = (n: number) => formatMoney(n, c.currency);
-  return `${c.productCount.toLocaleString()} products · ${m(c.price.min)}–${m(c.price.max)}, median ${m(c.price.median)}`;
+  return `${productCountText(c.productCount, complete)} products · ${m(c.price.min)}–${m(c.price.max)}, median ${m(c.price.median)}`;
 }
 
 export function shortDay(iso: string) {
@@ -216,4 +216,22 @@ export function readableViolation(text: string | undefined): string | undefined 
     return `The ${check} couldn’t run this time (Enkrypt returned an error), so this brief isn’t verified.`;
   }
   return text;
+}
+
+/** A pre-filled email asking the team to read a store by hand. */
+export function manualReadHref(email: string, store: string) {
+  const subject = `Manual read request: ${store}`;
+  const body = `Hi,\n\nPlease send me the competitor analysis for ${store}. It can't be read automatically.\n\nThanks`;
+  return `mailto:${email}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+}
+
+/** The "why" from the backend's manual-read reason ("We can't read x automatically — <why>. Want…"). */
+export function manualReadWhy(reason: string | undefined) {
+  const m = reason?.match(/automatically\s+[—-]\s+(.+?)\.\s+Want/);
+  return m ? m[1] : 'it doesn’t publish a product catalogue we can read';
+}
+
+/** "429" or, when the read was cut off by time, "at least 429". */
+export function productCountText(n: number, complete?: boolean) {
+  return `${complete === false ? 'at least ' : ''}${n.toLocaleString()}`;
 }

@@ -5,6 +5,7 @@ import { ArrowLeft, ShieldAlert, ShieldCheck } from "lucide-react";
 import type { BriefDetail } from "@/lib/api";
 import { getBrief } from "@/lib/server/briefs-store";
 import { trackingFor } from "@/lib/server/tracking";
+import { CONTACT_EMAIL } from "@/lib/server/contact";
 import { movementRows, readableViolation, splitBrief } from "@/lib/brief";
 import { BriefOverview } from "@/app/components/BriefOverview";
 import { TrackingLine } from "@/app/components/TrackingLine";
@@ -27,6 +28,8 @@ export default async function BriefPage({ params }: { params: Promise<{ id: stri
   const tracking = competitors.includes(DEMO_STORE) ? null : await trackingFor(competitors);
   const { byStore, rest } = splitBrief(brief.briefMarkdown);
   const rows = movementRows(brief);
+  // Stores we can't read automatically: retrying gives the same result, so no tracking line or "Add it again".
+  const manualOnly = brief.competitors.length > 0 && brief.competitors.every((c) => c.needsManualRead);
   // Never read because the store refused us for now: it's retried daily, so say when.
   const retryOn =
     tracking?.tracked && tracking.firstReadPending
@@ -46,8 +49,9 @@ export default async function BriefPage({ params }: { params: Promise<{ id: stri
       <BriefOverview
         brief={brief}
         linkToFull={false}
+        contactEmail={CONTACT_EMAIL}
         asideFooter={
-          tracking && (
+          tracking && !manualOnly && (
             <TrackingLine
               tracking={tracking}
               competitors={competitors}
@@ -69,6 +73,7 @@ export default async function BriefPage({ params }: { params: Promise<{ id: stri
             notes={r.status === "verified" ? notesFor(byStore, r.competitor) : null}
             tracked={tracking?.tracked ?? null}
             retryOn={retryOn}
+            contactEmail={CONTACT_EMAIL}
           />
         ))}
 

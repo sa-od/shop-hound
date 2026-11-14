@@ -1,5 +1,6 @@
 import { getLatestBrief } from "@/lib/server/briefs-store";
 import { getStatus } from "@/lib/server/status";
+import { CONTACT_EMAIL } from "@/lib/server/contact";
 import type { Status } from "@/lib/api";
 import { BriefOverview } from "./components/BriefOverview";
 import { NewAnalysisForm } from "./components/NewAnalysisForm";
@@ -12,7 +13,7 @@ export default async function ThisWeek() {
 
   return (
     <main className="mx-auto w-full max-w-[1280px] flex-1 px-4 py-6 sm:px-8 sm:py-8">
-      {brief ? <BriefOverview brief={brief} linkToFull /> : <FirstUse status={await getStatus()} />}
+      {brief ? <BriefOverview brief={brief} linkToFull contactEmail={CONTACT_EMAIL} /> : <FirstUse status={await getStatus()} />}
     </main>
   );
 }

@@ -1,7 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { Check, Clock, Loader2, TriangleAlert } from "lucide-react";
+import { Check, Clock, Info, Loader2, TriangleAlert } from "lucide-react";
+import { ManualReadLink } from "./ManualRead";
 import { retryTime, type LiveState } from "@/lib/status-client";
 
 /** The server sends its cap (maxAttempts); 3 for servers that don't. */
@@ -9,7 +10,7 @@ const DEFAULT_MAX_ATTEMPTS = 3;
 
 /** Stores in the queue, then the ones that finished during this visit. */
 export function QueueList({ live }: { live: LiveState }) {
-  const { queue, outcomes } = live;
+  const { queue, outcomes, status } = live;
   if (queue.length === 0 && outcomes.length === 0) return null;
 
   return (
@@ -43,10 +44,21 @@ export function QueueList({ live }: { live: LiveState }) {
         <li key={o.runId} className="flex items-start gap-2 py-2">
           {o.status === "failed" ? (
             <TriangleAlert size={14} className="mt-[2px] shrink-0 text-warn" />
+          ) : o.needsManualRead ? (
+            <Info size={14} className="mt-[2px] shrink-0 text-ink-3" />
           ) : (
             <Check size={14} className="mt-[2px] shrink-0 text-ok" />
           )}
           <span className="min-w-0">
+            {o.needsManualRead ? (
+              <>
+                <span className="text-ink-2">
+                  Can’t read <span className="font-semibold text-ink">{o.store}</span> automatically.
+                </span>{" "}
+                <ManualReadLink email={status.contactEmail} store={o.store} />
+              </>
+            ) : (
+            <>
             <span className="font-semibold">{o.store}</span>{" "}
             {o.status === "failed" ? (
               <span className="text-warn">failed: {o.error ?? "unknown error"}</span>
@@ -64,6 +76,8 @@ export function QueueList({ live }: { live: LiveState }) {
                   See briefs
                 </Link>
               </>
+            )}
+            </>
             )}
           </span>
         </li>

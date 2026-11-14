@@ -15,6 +15,8 @@ export interface Outcome {
   status: 'success' | 'failed' | 'done'; // done: finished, but another run finished after it before we looked
   error: string | null;
   briefId: string | null;
+  /** Finished, but the store can't be read automatically: offer the email request. */
+  needsManualRead?: boolean;
 }
 
 export interface LiveState {
@@ -55,6 +57,7 @@ function apply(next: Status) {
       status: r ? r.status : 'done',
       error: r?.error ?? null,
       briefId: r?.briefId ?? null,
+      ...(r?.needsManualRead ? { needsManualRead: true } : {}),
     });
   }
   state = { status: next, queue, outcomes: outcomes.slice(0, MAX_OUTCOMES) };

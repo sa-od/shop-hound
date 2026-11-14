@@ -6,7 +6,7 @@ import { ChangeRow } from "./shelf";
  * there is anything to compare. Every figure comes from the snapshot.
  */
 /** `partial`: read from web pages, where stock and variants aren't known (they read as defaults), so they're left out. */
-export function CatalogSnapshot({ catalog: c, partial = false }: { catalog: CatalogSummary; partial?: boolean }) {
+export function CatalogSnapshot({ catalog: c, partial = false, complete }: { catalog: CatalogSummary; partial?: boolean; complete?: boolean }) {
   const m = (n: number) => formatMoney(n, c.currency);
   // Older web-page reads carry default stock figures; newer ones leave them out.
   const hasStock = !partial && c.inStock !== undefined && c.soldOut !== undefined;
@@ -15,8 +15,13 @@ export function CatalogSnapshot({ catalog: c, partial = false }: { catalog: Cata
   const stats = [
     {
       label: "Products",
-      value: c.productCount.toLocaleString(),
-      note: c.avgVariants && !partial ? `${c.avgVariants.toFixed(1)} variants each on average` : null,
+      value: complete === false ? `${c.productCount.toLocaleString()}+` : c.productCount.toLocaleString(),
+      note:
+        complete === false
+          ? "At least this many: the read ran out of time"
+          : c.avgVariants && !partial
+            ? `${c.avgVariants.toFixed(1)} variants each on average`
+            : null,
     },
     { label: "Price range", value: `${m(c.price.min)}–${m(c.price.max)}`, note: "Each product at its lowest variant price" },
     { label: "Median price", value: m(c.price.median), note: null },

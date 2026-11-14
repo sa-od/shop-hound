@@ -3,8 +3,9 @@
 import { useState } from "react";
 import Link from "next/link";
 import { ArrowDown, ArrowUpDown } from "lucide-react";
-import { catalogLine, formatPct, isPartialRead, lastKnownLine, slug, sourceLabel, type MovementRow } from "@/lib/brief";
+import { catalogLine, formatPct, isPartialRead, lastKnownLine, productCountText, slug, sourceLabel, type MovementRow } from "@/lib/brief";
 import { StatusTag } from "./shelf";
+import { ManualReadLink } from "./ManualRead";
 
 type Key = "total" | "priceChanges" | "biggest" | "newSkus" | "removed" | "titleChanges";
 
@@ -19,14 +20,15 @@ const COLS: { key: Exclude<Key, "total">; label: string; short: string }[] = [
 const hasDiff = (r: MovementRow) => r.status === "verified";
 
 function subline(r: MovementRow) {
+  if (r.needsManualRead) return "No product catalogue we can read";
   return r.status === "unverified"
     ? r.reason ?? "Couldn’t be checked this time"
-    : `${r.productCount.toLocaleString()} products · ${sourceLabel(r.source)}${isPartialRead(r.source) ? " · partial" : ""}`;
+    : `${productCountText(r.productCount, r.complete)} products · ${sourceLabel(r.source)}${isPartialRead(r.source) ? " · partial" : ""}`;
 }
 
 function noDiffText(r: MovementRow) {
   if (r.status === "first_snapshot") {
-    return r.catalog ? `First check: ${catalogLine(r.catalog)}` : "First check: baseline saved. Changes show from the next check.";
+    return r.catalog ? `First check: ${catalogLine(r.catalog, r.complete)}` : "First check: baseline saved. Changes show from the next check.";
   }
   return r.lastKnown ? `Not checked this time. ${lastKnownLine(r.lastKnown)}.` : "Not checked this time.";
 }
@@ -38,7 +40,17 @@ function Cell({ r, k }: { r: MovementRow; k: Exclude<Key, "total"> }) {
 }
 
 /** One row per store in the brief. Sorted by size of change; any number column re-sorts it. */
-export function MovementsTable({ rows, briefId }: { rows: MovementRow[]; briefId: string }) {
+/** A store we can't read automatically: say so, with the email action, in place of figures. */
+function NoDiff({ r, contactEmail }: { r: MovementRow; contactEmail?: string | null }) {
+  if (!r.needsManualRead) return <>{noDiffText(r)}</>;
+  return (
+    <>
+      Can’t read automatically. <ManualReadLink email={contactEmail} store={r.competitor} />
+    </>
+  );
+}
+
+export function MovementsTable({ rows, briefId, contactEmail = null }: { rows: MovementRow[]; briefId: string; contactEmail?: string | null }) {
   const [sortKey, setSortKey] = useState<Key>("total");
 
   const value = (r: MovementRow, k: Key) => (k === "biggest" ? Math.abs(r.biggest ?? 0) : r[k]);
@@ -61,7 +73,7 @@ export function MovementsTable({ rows, briefId }: { rows: MovementRow[]; briefId
                 </Link>
                 <div className="mt-0.5 text-xs text-ink-3">{subline(r)}</div>
               </div>
-              <StatusTag status={r.status} />
+              <StatusTag status={r.needsManualRead ? "manual" : r.status} />
             </div>
             {hasDiff(r) ? (
               <dl className="mt-3 grid grid-cols-5 gap-2 text-sm">
@@ -75,7 +87,9 @@ export function MovementsTable({ rows, briefId }: { rows: MovementRow[]; briefId
                 ))}
               </dl>
             ) : (
-              <p className="mt-2 text-[13px] text-ink-3">{noDiffText(r)}</p>
+              <p className="mt-2 text-[13px] text-ink-3">
+                <NoDiff r={r} contactEmail={contactEmail} />
+              </p>
             )}
           </li>
         ))}
@@ -129,11 +143,11 @@ export function MovementsTable({ rows, briefId }: { rows: MovementRow[]; briefId
                   ))
                 ) : (
                   <td colSpan={5} className="px-4 py-3 text-right text-[13px] text-ink-3">
-                    {noDiffText(r)}
+                    <NoDiff r={r} contactEmail={contactEmail} />
                   </td>
                 )}
                 <td className="px-4 py-3 text-right">
-                  <StatusTag status={r.status} />
+                  <StatusTag status={r.needsManualRead ? "manual" : r.status} />
                 </td>
               </tr>
             ))}
