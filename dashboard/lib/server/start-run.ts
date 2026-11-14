@@ -25,6 +25,8 @@ const WAIT_POLL_MS = 4_000;
 // or later, if its Retry-After asks for longer — before the run finishes
 // with the store unverified. Attempts = delays + 1.
 const RETRY_DELAYS_MS = [15 * 60_000, 60 * 60_000];
+/** Total tries for a store that refuses us for now (shown in the queue). */
+export const MAX_ATTEMPTS = RETRY_DELAYS_MS.length + 1;
 
 // Gap between consecutive runs, so stores aren't read back to back.
 const RUN_GAP_MS = 3_000;

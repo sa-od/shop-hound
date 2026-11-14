@@ -19,6 +19,8 @@ export interface QueueItem {
   reason?: string;
   /** Attempts made so far (1 after the first try). */
   attempt?: number;
+  /** Total tries before the store is recorded as unverified (status 'retrying' only). */
+  maxAttempts?: number;
 }
 
 export interface Status {

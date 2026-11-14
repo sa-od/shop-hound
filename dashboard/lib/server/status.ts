@@ -1,6 +1,7 @@
 import 'server-only';
 import { listRecentBriefs, countBriefs } from './briefs-store';
 import { getQueue, getLastFinishedRun } from './runs';
+import { MAX_ATTEMPTS } from './start-run';
 import type { Status } from '@/lib/api';
 
 /** Everything the top bar, the add-store form and the queue list need, in one read. */
@@ -21,7 +22,7 @@ export async function getStatus(): Promise<Status> {
       status: r.status === 'running' ? 'running' : r.status === 'retrying' ? 'retrying' : 'queued',
       position: i + 1,
       queuedAt: r.queuedAt,
-      ...(r.status === 'retrying' && r.retryAt ? { retryAt: r.retryAt, reason: r.retryReason ?? undefined, attempt: r.attempt } : {}),
+      ...(r.status === 'retrying' && r.retryAt ? { retryAt: r.retryAt, reason: r.retryReason ?? undefined, attempt: r.attempt, maxAttempts: MAX_ATTEMPTS } : {}),
     })),
     lastRun: lastRun
       ? {
