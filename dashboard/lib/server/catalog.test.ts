@@ -42,3 +42,10 @@ test('non-USD currency gets its own symbol', () => {
   assert.equal(c.currency, 'EUR');
   assert.ok(c.priceBands[0].label.startsWith('Under €'));
 });
+
+test('AI-read catalogues leave out stock and variants instead of reporting 100% / 1.0', () => {
+  const c = summarizeCatalog([p('a', 20), p('b', 40)], { stockAndVariantsKnown: false })!;
+  for (const k of ['inStock', 'soldOut', 'inStockPct', 'avgVariants'] as const) assert.equal(c[k], undefined, k);
+  assert.equal(c.productCount, 2);
+  assert.deepEqual(c.price, { min: 20, median: 30, max: 40 });
+});

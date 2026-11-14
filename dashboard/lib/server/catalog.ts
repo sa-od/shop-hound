@@ -48,7 +48,13 @@ export function bandEdges(min: number, max: number): number[] {
   return Array.from({ length: MAX_EDGES }, (_, i) => inside[Math.round((i * (inside.length - 1)) / (MAX_EDGES - 1))]);
 }
 
-export function summarizeCatalog(products: NormalizedProduct[]): CatalogSummary | undefined {
+/**
+ * `stockAndVariantsKnown`: false for AI-read catalogues (source 'firecrawl'),
+ * which default every product to in stock with one variant — those fields
+ * are then left out, so neither the page nor the analyst can cite them.
+ */
+export function summarizeCatalog(products: NormalizedProduct[], opts: { stockAndVariantsKnown?: boolean } = {}): CatalogSummary | undefined {
+  const known = opts.stockAndVariantsKnown !== false;
   if (products.length === 0) return undefined;
   const currency = products[0].currency || 'USD';
   const prices = products.map(p => p.price).sort((a, b) => a - b);
@@ -81,12 +87,16 @@ export function summarizeCatalog(products: NormalizedProduct[]): CatalogSummary 
     currency,
     price: { min, median: median(prices), max },
     priceBands,
-    inStock,
-    soldOut: products.length - inStock,
-    inStockPct: Math.round((inStock / products.length) * 100),
+    ...(known
+      ? {
+          inStock,
+          soldOut: products.length - inStock,
+          inStockPct: Math.round((inStock / products.length) * 100),
+          avgVariants: Math.round((products.reduce((s, p) => s + p.variantCount, 0) / products.length) * 10) / 10,
+        }
+      : {}),
     productTypes: topCounts(products.map(p => p.productType), 6, 'Uncategorised'),
     vendors: topCounts(products.map(p => p.vendor), 5, 'Unknown'),
-    avgVariants: Math.round((products.reduce((s, p) => s + p.variantCount, 0) / products.length) * 10) / 10,
     cheapest: byPrice.slice(0, 3).map(pick),
     priciest: byPrice.slice(-3).reverse().map(pick),
   };

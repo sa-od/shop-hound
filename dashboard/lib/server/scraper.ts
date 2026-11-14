@@ -302,8 +302,10 @@ export async function scrapeCatalog(
   if (err instanceof StoreUnreachableError || !firecrawlEnabled()) throw err;
 
   // 2. Refused (429/403)? Fetch the same catalogue through Firecrawl — the
-  //    store's exact data, ~1 credit per page.
-  if (err instanceof StoreBlockedError) {
+  //    store's exact data, ~1 credit per page. This routes around the
+  //    store's per-IP limit via Firecrawl's network; SHOPIFY_RELAY=off
+  //    disables it (blocked stores then wait and retry instead).
+  if (err instanceof StoreBlockedError && process.env.SHOPIFY_RELAY !== 'off') {
     try {
       const products = nonEmpty(await readShopifyCatalog(host, relayPage, [host], deadlineAt));
       console.log(`[scrape] ${host}: read via Firecrawl relay (direct: ${err.message})`);

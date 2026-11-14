@@ -69,12 +69,14 @@ export const catalogSummarySchema = z.object({
   currency: z.string(),
   price: z.object({ min: z.number(), median: z.number(), max: z.number() }), // product.price = lowest variant price
   priceBands: z.array(z.object({ label: z.string(), min: z.number().nullable(), max: z.number().nullable(), count: z.number() })), // [min, max)
-  inStock: z.number(),
-  soldOut: z.number(),
-  inStockPct: z.number(), // whole percent, so the brief can cite it
+  // Stock and variants are left out when they weren't actually read (AI-read
+  // catalogues have no real availability or variant data).
+  inStock: z.number().optional(),
+  soldOut: z.number().optional(),
+  inStockPct: z.number().optional(), // whole percent, so the brief can cite it
   productTypes: z.array(namedCountSchema), // top 6; "" → "Uncategorised"
   vendors: z.array(namedCountSchema), // top 5
-  avgVariants: z.number(), // one decimal
+  avgVariants: z.number().optional(), // one decimal
   cheapest: z.array(productRefSchema), // 3, cheapest first
   priciest: z.array(productRefSchema), // 3, priciest first
 });

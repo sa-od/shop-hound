@@ -137,7 +137,7 @@ export async function runAnalysis(opts: RunOptions): Promise<RunResult> {
     const previous = previousByCompetitor.get(snapshot.competitor) ?? null;
     const diff = await diffSnapshots(snapshot, previous, vectorsByCompetitor.get(snapshot.competitor) ?? new Map());
     groundingErrors.push(...verifyDiffAgainstPayload(diff, snapshot, previous));
-    diffs.push({ ...diff, source: snapshot.source ?? 'shopify', catalog: summarizeCatalog(snapshot.products) });
+    diffs.push({ ...diff, source: snapshot.source ?? 'shopify', catalog: summarizeCatalog(snapshot.products, { stockAndVariantsKnown: snapshot.source !== 'firecrawl' }) });
   }
   for (const competitor of unverified) {
     // Today's failed read saved nothing, so the latest snapshot is an earlier check.
