@@ -67,7 +67,8 @@ const productRefSchema = z.object({ title: z.string(), price: z.number(), url: z
 
 /** What a store's catalogue looked like when it was read (see catalog.ts). */
 export const catalogSummarySchema = z.object({
-  productCount: z.number(),
+  productCount: z.number(), // merchandise only: checkout add-ons are left out (see addOnsExcluded)
+  addOnsExcluded: z.number().optional(), // add-ons (shipping protection, gift cards…) not counted
   currency: z.string(),
   price: z.object({ min: z.number(), median: z.number(), max: z.number() }), // product.price = lowest variant price
   priceBands: z.array(z.object({ label: z.string(), min: z.number().nullable(), max: z.number().nullable(), count: z.number() })), // [min, max)
@@ -75,7 +76,7 @@ export const catalogSummarySchema = z.object({
   // catalogues have no real availability or variant data).
   inStock: z.number().optional(),
   soldOut: z.number().optional(),
-  inStockPct: z.number().optional(), // whole percent, so the brief can cite it
+  inStockPct: z.number().optional(), // percent of products in stock, one decimal (99.7), cited as given
   productTypes: z.array(namedCountSchema), // top 6; "" → "Uncategorised"
   vendors: z.array(namedCountSchema), // top 5
   avgVariants: z.number().optional(), // one decimal

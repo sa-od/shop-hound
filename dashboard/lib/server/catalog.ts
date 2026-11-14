@@ -48,13 +48,31 @@ export function bandEdges(min: number, max: number): number[] {
   return Array.from({ length: MAX_EDGES }, (_, i) => inside[Math.round((i * (inside.length - 1)) / (MAX_EDGES - 1))]);
 }
 
+// Checkout add-ons stores list as "products": package/shipping protection,
+// returns coverage, shipping insurance, gift cards, warranties. They are not
+// part of what the store sells — a $0.80 "Free Returns Coverage" set
+// allbirds' cheapest product and its lowest price band.
+const ADDON_TYPE = /package[ _-]?protection|shipping[ _-]?protection|shipping[ _-]?insurance|\binsurance\b|gift[ _-]?card|\bwarranty\b|\breturns?\b|\bdonation\b/i;
+const ADDON_TITLE = /\b(package|shipping|order|delivery) (protection|insurance)\b|\breturns? (coverage|protection|insurance)\b|\bgift ?cards?\b|\be-?gift\b|\bextended warranty\b|\bprotection plan\b|\broute (package )?protection\b/i;
+const ADDON_VENDOR = new Set(['route', 'extend', 'navidium', 'corso', 'redo', 're:do', 'seel', 'xcover', 'clyde', 'mulberry', 'shipaid', 'onward']);
+
+/** A checkout add-on rather than merchandise (kept in diffs; left out of catalogue figures). */
+export function isServiceAddOn(p: Pick<NormalizedProduct, 'title' | 'productType' | 'vendor'>): boolean {
+  return ADDON_TYPE.test(p.productType) || ADDON_TITLE.test(p.title) || ADDON_VENDOR.has(p.vendor.trim().toLowerCase());
+}
+
 /**
+ * Checkout add-ons (see isServiceAddOn) are left out of every figure here;
+ * `addOnsExcluded` says how many.
+ *
  * `stockAndVariantsKnown`: false for AI-read catalogues (source 'firecrawl'),
  * which default every product to in stock with one variant — those fields
  * are then left out, so neither the page nor the analyst can cite them.
  */
-export function summarizeCatalog(products: NormalizedProduct[], opts: { stockAndVariantsKnown?: boolean } = {}): CatalogSummary | undefined {
+export function summarizeCatalog(allProducts: NormalizedProduct[], opts: { stockAndVariantsKnown?: boolean } = {}): CatalogSummary | undefined {
   const known = opts.stockAndVariantsKnown !== false;
+  const products = allProducts.filter(p => !isServiceAddOn(p));
+  const addOnsExcluded = allProducts.length - products.length;
   if (products.length === 0) return undefined;
   const currency = products[0].currency || 'USD';
   const prices = products.map(p => p.price).sort((a, b) => a - b);
@@ -91,7 +109,8 @@ export function summarizeCatalog(products: NormalizedProduct[], opts: { stockAnd
       ? {
           inStock,
           soldOut: products.length - inStock,
-          inStockPct: Math.round((inStock / products.length) * 100),
+          // One decimal: 311 of 312 is 99.7%, not a rounded-up "100%".
+          inStockPct: Math.round((inStock / products.length) * 1000) / 10,
           avgVariants: Math.round((products.reduce((s, p) => s + p.variantCount, 0) / products.length) * 10) / 10,
         }
       : {}),
@@ -99,5 +118,6 @@ export function summarizeCatalog(products: NormalizedProduct[], opts: { stockAnd
     vendors: topCounts(products.map(p => p.vendor), 5, 'Unknown'),
     cheapest: byPrice.slice(0, 3).map(pick),
     priciest: byPrice.slice(-3).reverse().map(pick),
+    ...(addOnsExcluded > 0 ? { addOnsExcluded } : {}),
   };
 }

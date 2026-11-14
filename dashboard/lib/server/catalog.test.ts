@@ -71,3 +71,32 @@ test('our own contact email is masked for the PII detector; other emails are not
   assert.match(out, /someone@else\.com/);
   assert.match(out, /Competitor A/);
 });
+
+test('checkout add-ons are left out of catalogue figures (allbirds "Free Returns Coverage")', async () => {
+  const { isServiceAddOn } = await import('./catalog');
+  const addOn = { ...p('returns', 0.8), title: 'Free Returns Coverage', productType: 'return,package_protection' };
+  const c = summarizeCatalog([addOn, p('a', 95), p('b', 110), p('c', 140)])!;
+  assert.equal(c.productCount, 3);
+  assert.equal(c.addOnsExcluded, 1);
+  assert.equal(c.price.min, 95);
+  assert.equal(c.cheapest[0].price, 95);
+  assert.ok(!c.priceBands.some(b => b.label.includes('0.8')));
+  assert.equal(isServiceAddOn({ title: 'Shipping Protection', productType: '', vendor: 'Route' }), true);
+  assert.equal(isServiceAddOn({ title: 'Digital Gift Card', productType: 'Gift Card', vendor: 'Allbirds' }), true);
+  assert.equal(isServiceAddOn({ title: "Men's Tree Runners", productType: 'Shoes', vendor: 'Allbirds' }), false);
+  assert.equal(isServiceAddOn({ title: 'Trail Runner Route', productType: 'Shoes', vendor: 'Allbirds' }), false);
+});
+
+test('in-stock share keeps one decimal: 311 of 312 is 99.7, not 100', () => {
+  const products = Array.from({ length: 312 }, (_, i) => ({ ...p(`x${i}`, 50), available: i !== 0 }));
+  assert.equal(summarizeCatalog(products)!.inStockPct, 99.7);
+});
+
+test('quoted names pair up in order: short quotes no longer produce a fake product', async () => {
+  const { verifyProductGrounding } = await import('./enkrypt');
+  const diff = JSON.stringify({ diffs: [{ competitor: 'allbirds.com', newSkus: [{ title: "Men's Tree Runners", price: 98 }], removedSkus: [], priceChanges: [], titleChanges: [], catalog: { productTypes: [{ name: 'Shoes', count: 271 }, { name: 'Uncategorised', count: 37 }] } }] });
+  const brief = 'The catalogue is primarily "Shoes" (271), followed by "Uncategorised" (37). New: "Men\'s Tree Runners" at $98.';
+  assert.deepEqual(verifyProductGrounding(brief, diff), []);
+  // a real invented product is still caught
+  assert.equal(verifyProductGrounding('They launched "Cloud Walker Pro Max" today.', diff).length, 1);
+});

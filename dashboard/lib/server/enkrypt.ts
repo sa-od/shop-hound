@@ -305,10 +305,15 @@ export function verifyProductGrounding(brief: string, diffContext: string): stri
     }
   }
 
-  // 2 — existence of quoted product references
-  for (const m of brief.matchAll(/"([^"\n]{8,120})"/g)) {
+  // 2 — existence of quoted product references.
+  // Every quoted span is matched (min 1 char) so quotes pair up in order:
+  // with a minimum length, a short quote like "Shoes" was skipped and the
+  // match started at its CLOSING quote, capturing the text between two
+  // quoted names (` (271), followed by `) as a fake product. Short and
+  // single-word spans are skipped only after pairing.
+  for (const m of brief.matchAll(/"([^"\n]{1,120})"/g)) {
     const quoted = norm(m[1]);
-    if (!quoted.includes(' ')) continue; // single tokens are rarely product titles
+    if (quoted.length < 8 || !quoted.includes(' ')) continue; // single tokens are rarely product titles
     const known = facts.some(f => {
       const t = norm(f.title);
       return t.includes(quoted) || quoted.includes(t);
