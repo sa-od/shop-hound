@@ -86,15 +86,25 @@ function httpReason(status: number): string {
 
 const isBlockStatus = (status: number) => status === 429 || status === 403;
 
+/** A refused page (429/403, or a bot check served instead of JSON) as an error. */
+function blockedError(page: CatalogPage): StoreBlockedError {
+  return page.challenged
+    ? new StoreBlockedError('the store answered with a bot check instead of its catalogue', page.retryAfterMs, 403)
+    : new StoreBlockedError(httpReason(page.status), page.retryAfterMs, page.status);
+}
+const isRefused = (page: CatalogPage) => isBlockStatus(page.status) || page.challenged === true;
+
 /** One catalogue page as the store answered it. `data` is null when it isn't a catalogue. */
-interface CatalogPage {
+export interface CatalogPage {
   status: number;
   retryAfterMs: number | null;
   data: ShopifyProductsResponse | null;
+  /** Answered 2xx with a web page instead of JSON — a bot check, not a verdict on the store. */
+  challenged?: boolean;
 }
 
 /** How a catalogue page is fetched: directly, or relayed through Firecrawl. */
-type PageFetcher = (base: string, page: number, budget: number, deadlineAt?: number) => Promise<CatalogPage>;
+export type PageFetcher = (base: string, page: number, budget: number, deadlineAt?: number) => Promise<CatalogPage>;
 
 const catalogUrl = (base: string, page: number) => `https://${base}/products.json?limit=${PAGE_LIMIT}&page=${page}`;
 
@@ -141,13 +151,29 @@ const directPage: PageFetcher = async (base, page, budget, deadlineAt) => {
  */
 const relayPage: PageFetcher = async (base, page, budget) => {
   const r = await fetchViaFirecrawl(catalogUrl(base, page), Math.max(budget, 20_000));
-  // Firecrawl may hand back the JSON as-is, or wrapped in a browser's <pre>.
-  const raw = r.body.trim();
+  return parseRelayPage(r.status, r.body);
+};
+
+/**
+ * What a relayed fetch says about the store. Firecrawl may hand back the JSON
+ * as-is, or wrapped in a browser's <pre>. A 2xx whose body is no JSON at all
+ * is a bot check (we only relay after a refusal), so it stays a refusal —
+ * never "not a Shopify store", which would send a Shopify store to a paid,
+ * partial AI read and stop it being retried.
+ */
+export function parseRelayPage(status: number, body: string): CatalogPage {
+  if (status < 200 || status >= 300) return { status, retryAfterMs: null, data: null };
+  const raw = body.trim();
   const text = raw.startsWith('{')
     ? raw
     : (raw.match(/<pre[^>]*>([\s\S]*?)<\/pre>/)?.[1] ?? '').replace(/&quot;/g, '"').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&');
-  return { status: r.status, retryAfterMs: null, data: r.status >= 200 && r.status < 300 ? parseCatalog(text) : null };
-};
+  try {
+    JSON.parse(text);
+  } catch {
+    return { status, retryAfterMs: null, data: null, challenged: true };
+  }
+  return { status, retryAfterMs: null, data: parseCatalog(text) };
+}
 
 /**
  * Find which origin serves the catalogue: some stores only answer on www.
@@ -164,7 +190,7 @@ async function openCatalog(host: string, fetchPage: PageFetcher, bases: string[]
       const page = await fetchPage(base, 1, budget, deadlineAt);
       reachable = true;
       // Limited or blocked: the www. form is the same store behind the same limits.
-      if (isBlockStatus(page.status)) throw new StoreBlockedError(httpReason(page.status), page.retryAfterMs, page.status);
+      if (isRefused(page)) throw blockedError(page);
       if (page.data) return { base, first: page.data };
       reasons.push(page.status >= 200 && page.status < 300 ? 'not a Shopify catalogue' : httpReason(page.status));
     } catch (err) {
@@ -202,7 +228,7 @@ function toProducts(host: string, data: ShopifyProductsResponse): NormalizedProd
 }
 
 /** Read a Shopify store's whole catalogue (up to MAX_PAGES pages) with the given fetcher. */
-async function readShopifyCatalog(host: string, fetchPage: PageFetcher, bases: string[], deadlineAt?: number): Promise<NormalizedProduct[]> {
+export async function readShopifyCatalog(host: string, fetchPage: PageFetcher, bases: string[], deadlineAt?: number): Promise<NormalizedProduct[]> {
   const { base, first } = await openCatalog(host, fetchPage, bases, deadlineAt);
   const products = toProducts(host, first);
   let last = first;
@@ -213,7 +239,7 @@ async function readShopifyCatalog(host: string, fetchPage: PageFetcher, bases: s
     const res = await fetchPage(base, page, budget, deadlineAt).catch(err => {
       throw new Error(`catalogue page ${page} failed — ${describeFetchError(err)}`);
     });
-    if (isBlockStatus(res.status)) throw new StoreBlockedError(httpReason(res.status), res.retryAfterMs, res.status);
+    if (isRefused(res)) throw blockedError(res);
     if (!res.data) throw new Error(`catalogue page ${page} failed — ${httpReason(res.status)}`);
     products.push(...toProducts(host, res.data));
     last = res.data;

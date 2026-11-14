@@ -2,6 +2,7 @@ import 'server-only';
 import { after } from 'next/server';
 import { getDeadline } from '@vercel/functions';
 import { runAnalysis, RunBlockedError } from './pipeline';
+import { hasRetriesLeft, retryDelayMs } from './retry-policy';
 import { claimNextRun, enqueueRun, finishRun, getActiveRun, getQueue, hasClaimableRun, scheduleRetry, type RunRecord, type RunTrigger } from './runs';
 
 /**
@@ -21,12 +22,7 @@ const MIN_RUN_MS = 120_000;
 // While another request's run holds the lock, check back this often.
 const WAIT_POLL_MS = 4_000;
 
-// A store that refuses us for now (429/403) is retried after these delays —
-// or later, if its Retry-After asks for longer — before the run finishes
-// with the store unverified. Attempts = delays + 1.
-const RETRY_DELAYS_MS = [15 * 60_000, 60 * 60_000];
-/** Total tries for a store that refuses us for now (shown in the queue). */
-export const MAX_ATTEMPTS = RETRY_DELAYS_MS.length + 1;
+export { MAX_ATTEMPTS } from './retry-policy';
 
 // Gap between consecutive runs, so stores aren't read back to back.
 const RUN_GAP_MS = 3_000;
@@ -41,7 +37,7 @@ function requestDeadline(requestStartedAt: number): number {
 
 /** Execute one claimed run to completion, recording success or failure. Never throws. */
 async function executeRun(run: RunRecord, deadlineAt: number): Promise<void> {
-  const retriesLeft = run.attempt <= RETRY_DELAYS_MS.length;
+  const retriesLeft = hasRetriesLeft(run.attempt);
   try {
     const result = await runAnalysis({
       competitors: run.competitors,
@@ -52,8 +48,7 @@ async function executeRun(run: RunRecord, deadlineAt: number): Promise<void> {
     await finishRun(run.runId, { status: 'success', briefId: result.briefId, blocked: result.blocked.length > 0 });
   } catch (err) {
     if (err instanceof RunBlockedError && retriesLeft) {
-      const delay = Math.max(RETRY_DELAYS_MS[run.attempt - 1], err.retryAfterMs ?? 0);
-      const retryAt = new Date(Date.now() + delay);
+      const retryAt = new Date(Date.now() + retryDelayMs(run.attempt, err.retryAfterMs)!);
       console.log(`[${run.runId}] blocked (${err.message}) — attempt ${run.attempt}, retrying at ${retryAt.toISOString()}`);
       await scheduleRetry(run.runId, retryAt, err.message).catch(e => console.error(`[${run.runId}] could not schedule retry:`, e));
       return;

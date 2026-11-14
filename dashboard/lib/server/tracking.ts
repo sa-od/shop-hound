@@ -1,5 +1,5 @@
 import { db, RUNS, BRIEFS, SNAPSHOTS } from './db';
-import { INJECTION_DEMO_DOMAIN } from './scraper';
+import { INJECTION_DEMO_DOMAIN, normalizeDomain } from './scraper';
 
 /**
  * Automatic tracking. Every set of stores a user analyses from the dashboard
@@ -140,7 +140,10 @@ export function dueFirst(sets: TrackedSet[]): TrackedSet[] {
 // ── Database-backed API ──────────────────────────────────────────────────────
 
 function defaultCompetitors(): string[] {
-  return (process.env.COMPETITOR_STORES ?? '').split(',').map(s => s.trim()).filter(Boolean);
+  // Same cleanup the pipeline applies, so the key matches the briefs' key
+  // ("https://www.Goodr.com" → "goodr.com"); otherwise the set never finds
+  // its last brief and is due every day.
+  return (process.env.COMPETITOR_STORES ?? '').split(',').map(normalizeDomain).filter(Boolean);
 }
 
 /** Most recent successful dashboard run per set, within the tracking window. */

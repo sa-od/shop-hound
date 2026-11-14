@@ -72,28 +72,60 @@ const extractionPrompt =
   'product page, return that one product. Do NOT include blog posts, reviews, or navigation links. ' +
   'Return an empty products array if the page shows no purchasable products.';
 
-async function firecrawlFetch(path: string, init?: RequestInit): Promise<any> {
+const CALL_TIMEOUT_MS = 60_000;
+const CALL_ATTEMPTS = 3;
+
+/** Firecrawl answered with an HTTP error (as opposed to the request never arriving). */
+class FirecrawlHttpError extends Error {
+  constructor(message: string, readonly status: number) {
+    super(message);
+  }
+}
+
+/**
+ * Was the request certainly never processed? Only then is re-sending a billed
+ * POST safe: a timeout or a 5xx may mean Firecrawl started the job anyway, and
+ * a second POST would start (and bill) a second one.
+ */
+export function safeToResend(err: unknown, method: string): boolean {
+  if (method === 'GET') return true; // polling is read-only
+  if (err instanceof FirecrawlHttpError) return err.status === 429; // rate-limited: rejected outright
+  const e = err as { name?: string; cause?: { code?: string } };
+  if (e?.name === 'TimeoutError' || e?.name === 'AbortError') return false;
+  // Connection never made: DNS failure, refused, reset before sending.
+  return ['ENOTFOUND', 'EAI_AGAIN', 'ECONNREFUSED', 'UND_ERR_CONNECT_TIMEOUT'].includes(e?.cause?.code ?? '');
+}
+
+/**
+ * One Firecrawl API call. Each try's timeout is cut to fit `deadlineAt`, so a
+ * slow Firecrawl can't carry the run past the function limit (where it would
+ * be killed before recording any outcome).
+ */
+async function firecrawlFetch(path: string, init: RequestInit = {}, deadlineAt?: number): Promise<any> {
   const apiKey = process.env.FIRECRAWL_API_KEY;
   if (!apiKey) throw new Error('FIRECRAWL_API_KEY is not set');
+  const method = (init.method ?? 'GET').toUpperCase();
 
-  // Retry transient network blips, same shape as briefs-store scroll
   let lastErr: unknown;
-  for (let attempt = 1; attempt <= 3; attempt++) {
+  for (let attempt = 1; attempt <= CALL_ATTEMPTS; attempt++) {
+    const left = deadlineAt === undefined ? CALL_TIMEOUT_MS : deadlineAt - Date.now();
+    if (left < 2_000) throw lastErr ?? new Error(`Firecrawl ${path}: time budget exhausted`);
     try {
       const res = await fetch(`${FIRECRAWL_BASE_URL}${path}`, {
         ...init,
         headers: {
           Authorization: `Bearer ${apiKey}`,
           'Content-Type': 'application/json',
-          ...init?.headers,
+          ...init.headers,
         },
-        signal: AbortSignal.timeout(60_000),
+        signal: AbortSignal.timeout(Math.min(CALL_TIMEOUT_MS, left)),
       });
-      const body = await res.json();
-      if (!res.ok) throw new Error(`Firecrawl ${path} → ${res.status}: ${JSON.stringify(body).slice(0, 300)}`);
+      const body = await res.json().catch(() => null);
+      if (!res.ok) throw new FirecrawlHttpError(`Firecrawl ${path} → ${res.status}: ${JSON.stringify(body).slice(0, 300)}`, res.status);
       return body;
     } catch (err) {
       lastErr = err;
+      if (!safeToResend(err, method)) throw err;
       await new Promise(r => setTimeout(r, attempt * 1000));
     }
   }
@@ -118,6 +150,29 @@ function selectPages(links: string[], host: string, budget: number): string[] {
   // Nothing recognizable → best effort: homepage + first links up to budget
   if (selected.length === 0) return [`https://${host}/`, ...sameHost.slice(0, budget - 1)];
   return selected;
+}
+
+/**
+ * The product's URL, canonicalised, if it is an http(s) page on the store's
+ * own site (or a subdomain of it); null otherwise. The AI's output is
+ * untrusted — a page with injected text could make it return links to other
+ * sites, which the brief would then show as the store's products.
+ * Query and hash are stripped so the same product keeps one identity
+ * (variant params like ?Material=… would otherwise split it).
+ */
+export function storeProductUrl(raw: string | undefined, host: string): string | null {
+  try {
+    const u = new URL(raw ?? '', `https://${host}/`);
+    if (u.protocol !== 'https:' && u.protocol !== 'http:') return null;
+    const site = host.replace(/^www\./, '');
+    const h = u.hostname.replace(/^www\./, '');
+    if (h !== site && !h.endsWith(`.${site}`)) return null;
+    u.search = '';
+    u.hash = '';
+    return u.toString();
+  } catch {
+    return null;
+  }
 }
 
 /** Derive a slug-ish handle from a product URL (last meaningful path segment). */
@@ -145,7 +200,7 @@ export async function extractCatalogWithFirecrawl(host: string, deadlineAt?: num
   const mapped = await firecrawlFetch('/map', {
     method: 'POST',
     body: JSON.stringify({ url: `https://${host}`, limit: 1000, includeSubdomains: false }),
-  });
+  }, deadlineAt);
   const links: string[] = (mapped?.links ?? [])
     .map((l: { url?: string } | string) => (typeof l === 'string' ? l : l.url))
     .filter(Boolean);
@@ -165,7 +220,7 @@ export async function extractCatalogWithFirecrawl(host: string, deadlineAt?: num
       onlyMainContent: true,
       maxConcurrency: 5,
     }),
-  });
+  }, deadlineAt);
   if (!batch?.success || !batch?.id) {
     throw new Error(`Firecrawl batch scrape did not start: ${JSON.stringify(batch).slice(0, 300)}`);
   }
@@ -184,9 +239,13 @@ export async function extractCatalogWithFirecrawl(host: string, deadlineAt?: num
       throw new Error(`Firecrawl batch ${batch.id} timed out (poll budget exhausted)`);
     }
     await new Promise(r => setTimeout(r, POLL_INTERVAL_MS));
-    const status = await firecrawlFetch(`/batch/scrape/${batch.id}`);
+    // A poll that fails near the deadline keeps the pages finished so far.
+    const status = await firecrawlFetch(`/batch/scrape/${batch.id}`, {}, deadline).catch(err => {
+      if (results.some(r => (r?.json?.products ?? []).length > 0)) return { status: 'deadline', data: results };
+      throw err;
+    });
     if (Array.isArray(status.data)) results = status.data; // pages finished so far
-    if (status.status === 'completed') break;
+    if (status.status === 'completed' || status.status === 'deadline') break;
     if (status.status === 'failed' || status.status === 'cancelled') {
       throw new Error(`Firecrawl batch ${batch.id} ${status.status}`);
     }
@@ -204,15 +263,8 @@ export async function extractCatalogWithFirecrawl(host: string, deadlineAt?: num
       // Resolve relative URLs and canonicalize: strip query/hash so the same
       // product keeps the same identity across weeks (variant params like
       // ?Material=... would otherwise fracture the diff's exact-ID matching).
-      let url: string;
-      try {
-        const u = new URL(p.url ?? '', `https://${host}/`);
-        u.search = '';
-        u.hash = '';
-        url = u.toString();
-      } catch {
-        continue;
-      }
+      const url = storeProductUrl(p.url, host);
+      if (!url) continue;
       if (seenUrls.has(url)) continue; // listing + product page can repeat items
       seenUrls.add(url);
       try {
