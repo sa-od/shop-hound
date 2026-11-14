@@ -250,6 +250,8 @@ export async function reportProgress(runId: string, p: { step: RunStep; detail?:
         ...(p.detail !== undefined ? { stepDetail: p.detail.slice(0, 120) } : {}),
         ...(p.baseline !== undefined ? { baseline: p.baseline } : {}),
       },
+      // A new step without detail must not keep showing the previous step's text.
+      ...(newStep && p.detail === undefined ? { $unset: { stepDetail: '' } } : {}),
     },
   );
 }

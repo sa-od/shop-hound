@@ -196,7 +196,7 @@ export async function runAnalysis(opts: RunOptions): Promise<RunResult> {
   const vectorsByCompetitor = new Map<string, Map<string, number[]>>();
   const previousByCompetitor = new Map<string, CompetitorSnapshot | null>();
   const productTotal = snapshots.reduce((n, s) => n + s.products.length, 0).toLocaleString('en-US');
-  progress({ step: 'comparing', detail: `${productTotal} products read` });
+  progress({ step: 'comparing', detail: `${productTotal} products` });
   for (const snapshot of snapshots) {
     // A partial read (AI-read, or time ran out) is never diffed: baseline only.
     previousByCompetitor.set(
@@ -209,7 +209,7 @@ export async function runAnalysis(opts: RunOptions): Promise<RunResult> {
       progress({
         step: 'comparing',
         baseline,
-        detail: baseline ? `Saving ${productTotal} products as the baseline` : `Comparing ${productTotal} products with the last check`,
+        detail: `${productTotal} products`, // the label already says baseline or comparing
       });
     }
     const { vectors, textKeys, reused, skipped } = await vectorsFor(snapshot, embedUntil);
@@ -263,7 +263,7 @@ export async function runAnalysis(opts: RunOptions): Promise<RunResult> {
   // anywhere in the payload). A real address keeps its domain and is caught.
   const scrapedTitles = snapshots.flatMap(s => s.products.map(p => p.title));
   const diffJson = JSON.stringify(diff);
-  progress({ step: 'grounding', detail: 'Checking the data with Enkrypt' });
+  progress({ step: 'grounding' }); // no detail: it would only repeat the step's label
   const grounding = await groundingCheck(maskCompetitorDomains(`${diffJson}\n${scrapedTitles.join('\n')}`, diffJson));
   if (groundingErrors.length > 0) {
     grounding.greenLight = false;
@@ -311,7 +311,7 @@ export async function runAnalysis(opts: RunOptions): Promise<RunResult> {
     // Week-over-week trend context from the archive: prior briefs covering
     // any of this run's competitors, newest first. Failure here never blocks.
     const runCompetitors = new Set(diffs.map(d => d.competitor));
-    progress({ step: 'writing', detail: 'The analyst is writing the brief' });
+    progress({ step: 'writing' });
     let historyEntries: unknown[] = [];
     try {
       historyEntries = (await briefsForCompetitors([...runCompetitors], 4)).map(b => ({
@@ -340,7 +340,7 @@ export async function runAnalysis(opts: RunOptions): Promise<RunResult> {
   }
 
   // ── 6. Safety audit (Enkrypt — output side) ──
-  progress({ step: 'safety', detail: 'Auditing the brief with Enkrypt' });
+  progress({ step: 'safety' });
   let safety: GuardrailVerdict;
   if (!grounding.greenLight) {
     // Nothing was generated, so there is nothing to audit — record the skip
