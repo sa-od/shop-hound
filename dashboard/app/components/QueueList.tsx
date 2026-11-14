@@ -4,8 +4,8 @@ import Link from "next/link";
 import { Check, Clock, Loader2, TriangleAlert } from "lucide-react";
 import { retryTime, type LiveState } from "@/lib/status-client";
 
-/** Attempts are capped at 3 by the server; the third is final. */
-const MAX_ATTEMPTS = 3;
+/** The server sends its cap (maxAttempts); 3 for servers that don't. */
+const DEFAULT_MAX_ATTEMPTS = 3;
 
 /** Stores in the queue, then the ones that finished during this visit. */
 export function QueueList({ live }: { live: LiveState }) {
@@ -29,7 +29,7 @@ export function QueueList({ live }: { live: LiveState }) {
               <>
                 <span className="text-warn" suppressHydrationWarning>
                   waiting to try again {retryTime(q.retryAt)}
-                  {q.attempt ? ` (try ${q.attempt + 1} of ${MAX_ATTEMPTS})` : ""}
+                  {q.attempt ? ` (try ${q.attempt + 1} of ${q.maxAttempts ?? DEFAULT_MAX_ATTEMPTS})` : ""}
                 </span>
                 {q.reason && <span className="block text-xs text-ink-3">{capitalise(q.reason)}.</span>}
               </>
