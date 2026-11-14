@@ -34,11 +34,7 @@ export default async function BriefPage({ params }: { params: Promise<{ id: stri
   // Never read because the store refused us for now: it's retried daily, so say when.
   const retryOn =
     tracking?.tracked && tracking.firstReadPending
-      ? new Date(Math.max(Date.parse(tracking.nextCheck ?? ""), Date.now()) || Date.now()).toLocaleDateString("en-US", {
-          month: "long",
-          day: "numeric",
-          timeZone: "UTC",
-        })
+      ? new Date(Math.max(Date.parse(tracking.nextCheck ?? ""), Date.now()) || Date.now()).toISOString()
       : null;
 
   return (

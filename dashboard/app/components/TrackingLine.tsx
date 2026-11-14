@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { CalendarClock, Loader2 } from "lucide-react";
 import { addStore } from "@/lib/run-client";
+import { LocalTime } from "./LocalTime";
 
 export interface Tracking {
   tracked: boolean;
@@ -10,10 +11,6 @@ export interface Tracking {
   nextCheck: string | null;
   /** Never read yet because the store refused us for now; retried daily. */
   firstReadPending?: boolean;
-}
-
-function day(iso: string) {
-  return new Date(iso).toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric", timeZone: "UTC" });
 }
 
 /**
@@ -50,18 +47,38 @@ export function TrackingLine({ tracking, competitors, unreadable }: { tracking: 
     text = (
       <>
         We couldn’t read {competitors.length === 1 ? "this store" : "these stores"} yet.
-        {next ? ` We’ll try again on or after ${day(next)}.` : " We’ll try again at the next daily check."}
+        {next ? (
+          <>
+            {" "}We’ll try again on or after <LocalTime iso={next} format="date" />.
+          </>
+        ) : (
+          " We’ll try again at the next daily check."
+        )}
       </>
     );
   } else if (tracking.tracked) {
     text = (
       <>
-        Re-checked automatically every week{tracking.trackedUntil ? ` until ${day(tracking.trackedUntil)}` : ""}.
-        {next && ` Next check on or after ${day(next)}.`}
+        Re-checked automatically every week
+        {tracking.trackedUntil && (
+          <>
+            {" "}until <LocalTime iso={tracking.trackedUntil} format="date" />
+          </>
+        )}
+        .
+        {next && (
+          <>
+            {" "}Next check on or after <LocalTime iso={next} format="date" />.
+          </>
+        )}
       </>
     );
   } else if (tracking.trackedUntil) {
-    text = <>Tracking ended {day(tracking.trackedUntil)}.</>;
+    text = (
+      <>
+        Tracking ended <LocalTime iso={tracking.trackedUntil} format="date" />.
+      </>
+    );
     canRunAgain = true;
   } else if (unreadable) {
     text = <>Not re-checked: we couldn’t read {competitors.length === 1 ? "this store" : "these stores"}.</>;

@@ -4,12 +4,9 @@ import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Loader2, Plus, X } from "lucide-react";
 import type { Status } from "@/lib/api";
-import { retryTime, useLiveStatus } from "@/lib/status-client";
+import { useLiveStatus } from "@/lib/status-client";
+import { LocalTime, RetryTime } from "./LocalTime";
 import { NewAnalysisForm } from "./NewAnalysisForm";
-
-function shortDate(iso: string) {
-  return new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric" });
-}
 
 /**
  * Queue status and "Add store". Follows every store in the queue (added here,
@@ -62,15 +59,15 @@ export function RunControl({ initial }: { initial: Status }) {
             {retrying.length > 0 && <span className="text-[#a8abb2]">· {retrying.length} waiting to retry</span>}
           </span>
         ) : retrying.length > 0 ? (
-          <span className="hidden text-[#d5d7db] md:inline" aria-live="polite" suppressHydrationWarning>
+          <span className="hidden text-[#d5d7db] md:inline" aria-live="polite">
             {retrying.length === 1
-              ? `${retrying[0].store}: trying again ${retryTime(retrying[0].retryAt)}`
+              ? <>{retrying[0].store}: trying again <RetryTime iso={retrying[0].retryAt} /></>
               : `${retrying.length} stores waiting to try again`}
           </span>
         ) : failure ? (
           <span className="hidden text-[#ffb4b4] md:inline">Last analysis failed</span>
         ) : status.lastBrief ? (
-          <span className="hidden text-[#a8abb2] md:inline">Last brief {shortDate(status.lastBrief.createdAt)}</span>
+          <span className="hidden text-[#a8abb2] md:inline">Last brief <LocalTime iso={status.lastBrief.createdAt} format="shortdate" /></span>
         ) : null}
 
         <button

@@ -2,7 +2,7 @@ import Link from "next/link";
 import { AlertTriangle, ArrowRight } from "lucide-react";
 import type { BriefDetail } from "@/lib/api";
 import { formatMoney, movementRows, readableViolation, priceTickets, splitBrief, type CatalogSummary } from "@/lib/brief";
-import { formatWeek } from "@/lib/utils";
+import { LocalTime } from "./LocalTime";
 import { MovementsTable } from "./MovementsTable";
 import { Card, Rail, Ticket, TrustLine } from "./shelf";
 
@@ -101,7 +101,7 @@ export function BriefOverview({
 
         <Card>
           <h1 className="font-cond text-[32px] font-extrabold leading-[1.05] tracking-tight sm:text-[36px]">
-            Week of {formatWeek(brief.weekOf)}
+            Week of <LocalTime iso={brief.createdAt} format="date" />
           </h1>
           {summary ? (
             <p className="mt-3 max-w-[70ch] text-base leading-relaxed text-ink-2">

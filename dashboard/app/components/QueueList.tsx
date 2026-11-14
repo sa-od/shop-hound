@@ -3,7 +3,8 @@
 import Link from "next/link";
 import { Check, Clock, Info, Loader2, TriangleAlert } from "lucide-react";
 import { ManualReadLink } from "./ManualRead";
-import { retryTime, type LiveState } from "@/lib/status-client";
+import type { LiveState } from "@/lib/status-client";
+import { RetryTime } from "./LocalTime";
 
 /** The server sends its cap (maxAttempts); 3 for servers that don't. */
 const DEFAULT_MAX_ATTEMPTS = 3;
@@ -28,8 +29,8 @@ export function QueueList({ live }: { live: LiveState }) {
             <span className="font-semibold">{q.store}</span>{" "}
             {q.status === "retrying" ? (
               <>
-                <span className="text-warn" suppressHydrationWarning>
-                  waiting to try again {retryTime(q.retryAt)}
+                <span className="text-warn">
+                  waiting to try again <RetryTime iso={q.retryAt} />
                   {q.attempt ? ` (try ${q.attempt + 1} of ${q.maxAttempts ?? DEFAULT_MAX_ATTEMPTS})` : ""}
                 </span>
                 {q.reason && <span className="block text-xs text-ink-3">{capitalise(q.reason)}.</span>}

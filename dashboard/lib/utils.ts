@@ -1,14 +1,3 @@
-export function formatWeek(weekOf: string) {
-  const [y, m, d] = weekOf.split("-").map(Number);
-  if (!y) return weekOf;
-  return new Date(Date.UTC(y, m - 1, d)).toLocaleDateString("en-US", {
-    year: "numeric",
-    month: "long",
-    day: "numeric",
-    timeZone: "UTC",
-  });
-}
-
 const DOMAIN_RE = /^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)*\.[a-z]{2,12}$/;
 
 export function isValidDomain(raw: string): boolean {

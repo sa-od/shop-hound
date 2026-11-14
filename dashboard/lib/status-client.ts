@@ -102,17 +102,6 @@ export function useLiveStatus(initial: Status): LiveState {
   return useSyncExternalStore(subscribe, () => state ?? seed, () => seed);
 }
 
-/** "2:20 PM" today, "Nov 15, 2:20 PM" otherwise; "shortly" once the time has passed. */
-export function retryTime(iso: string | undefined): string {
-  if (!iso) return 'later';
-  const d = new Date(iso);
-  if (d.getTime() <= Date.now()) return 'shortly';
-  const time = d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
-  return d.toDateString() === new Date().toDateString()
-    ? `at ${time}`
-    : `on ${d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}, ${time}`;
-}
-
 /** Show a just-added store at once. Returns true when it was already queued or running. */
 export function addToQueue(item: { runId: string; store: string; position: number }): boolean {
   if (!state) return false;

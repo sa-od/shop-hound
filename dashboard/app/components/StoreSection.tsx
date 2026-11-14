@@ -1,7 +1,9 @@
 import dynamicImport from "next/dynamic";
 import type { BriefDetail } from "@/lib/api";
-import { diffFor, formatPct, formatPrice, isPartialRead, lastKnownLine, productCountText, sourceLabel, priceTickets, slug, type MovementRow } from "@/lib/brief";
+import { diffFor, formatPct, formatPrice, isPartialRead, productCountText, sourceLabel, priceTickets, slug, type MovementRow } from "@/lib/brief";
 import { CatalogSnapshot } from "./CatalogSnapshot";
+import { LastRead } from "./LastRead";
+import { LocalTime } from "./LocalTime";
 import { ManualReadLink, PlatformTag } from "./ManualRead";
 import { Card, ChangeRow, Rail, StatusTag, Ticket } from "./shelf";
 
@@ -28,7 +30,7 @@ function Capped<T>({ items, render, noun }: { items: T[]; render: (item: T) => R
 
 /**
  * `tracked`: whether the daily job will re-check this store (null when unknown).
- * `retryOn`: set when it was never read because it refused us for now; the day it's tried again.
+ * `retryOn`: set when it was never read because it refused us for now; when it's tried again (ISO instant).
  */
 export function StoreSection({
   brief,
@@ -59,9 +61,16 @@ export function StoreSection({
               ? "No product catalogue we can read"
               : row.status === "unverified"
               ? row.reason ?? "Couldn’t be checked this time"
-              : `${productCountText(row.productCount, row.complete)} products · ${sourceLabel(row.source)}${
-                  d?.previousSnapshotDate ? ` · compared with ${d.previousSnapshotDate}` : ""
-                }`}
+              : (
+                  <>
+                    {productCountText(row.productCount, row.complete)} products · {sourceLabel(row.source)}
+                    {d?.previousSnapshotDate && (
+                      <>
+                        {" "}· compared with <LocalTime iso={d.previousSnapshotDate} format="calendar" />
+                      </>
+                    )}
+                  </>
+                )}
           </p>
         </div>
         <StatusTag status={row.needsManualRead ? "manual" : row.status} />
@@ -98,9 +107,14 @@ export function StoreSection({
           {row.status === "unverified" && !row.needsManualRead && (
             <p className="mt-3 text-sm text-ink-2">
               Nothing from this store is in the brief.
-              {row.lastKnown && ` ${lastKnownLine(row.lastKnown)}.`}
+              {row.lastKnown && (
+                <>
+                  {" "}
+                  <LastRead l={row.lastKnown} />.
+                </>
+              )}
               {retryOn
-                ? ` We’ll try again on or after ${retryOn}.`
+                ? <>{" "}We’ll try again on or after <LocalTime iso={retryOn} format="date" />.</>
                 : tracked === true
                   ? " It’s tried again at the next check."
                   : tracked === false

@@ -1,15 +1,10 @@
 import Link from "next/link";
 import { briefTotals } from "@/lib/api";
 import { listRecentBriefs } from "@/lib/server/briefs-store";
-import { formatWeek } from "@/lib/utils";
 import { AuditTag, Card } from "../components/shelf";
+import { LocalTime } from "../components/LocalTime";
 
 export const dynamic = "force-dynamic";
-
-/** Several briefs can share a week, so each row also shows when it was written. */
-function runTime(iso: string) {
-  return `Written ${new Date(iso).toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit", timeZone: "UTC" })} UTC`;
-}
 
 export default async function BriefsArchive() {
   const briefs = await listRecentBriefs();
@@ -28,7 +23,7 @@ export default async function BriefsArchive() {
           <table className="w-full min-w-[760px] border-collapse text-sm">
             <thead>
               <tr className="border-b border-edge text-[11px] uppercase tracking-[0.04em] text-ink-3">
-                <th scope="col" className="px-4 py-2.5 text-left font-semibold">Week</th>
+                <th scope="col" className="px-4 py-2.5 text-left font-semibold">Date</th>
                 <th scope="col" className="px-4 py-2.5 text-left font-semibold">Stores</th>
                 <th scope="col" className="px-4 py-2.5 text-right font-semibold">Price changes</th>
                 <th scope="col" className="px-4 py-2.5 text-right font-semibold">New</th>
@@ -45,9 +40,12 @@ export default async function BriefsArchive() {
                   <tr key={b.id} className="border-b border-[#eceef1] last:border-0 hover:bg-[#fafafb]">
                     <td className="px-4 py-3">
                       <Link href={`/briefs/${b.id}`} className="font-cond text-lg font-bold hover:underline">
-                        {formatWeek(b.weekOf)}
+                        <LocalTime iso={b.createdAt} format="date" />
                       </Link>
-                      <div className="text-xs text-ink-3">{runTime(b.createdAt)}</div>
+                      {/* Several briefs can share a day, so each row also shows when it was written. */}
+                      <div className="text-xs text-ink-3">
+                        Written <LocalTime iso={b.createdAt} />
+                      </div>
                     </td>
                     <td className="max-w-[380px] px-4 py-3 text-ink-2">
                       <span className="line-clamp-1">{b.competitors.map((c) => c.competitor).join(", ")}</span>

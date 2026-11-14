@@ -187,14 +187,6 @@ export function catalogLine(c: CatalogSummary, complete?: boolean) {
   return `${productCountText(c.productCount, complete)} products · ${m(c.price.min)}–${m(c.price.max)}, median ${m(c.price.median)}`;
 }
 
-export function shortDay(iso: string) {
-  return new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' });
-}
-
-/** "Last read Nov 6: 140 products" */
-export function lastKnownLine(l: LastKnown) {
-  return `Last read ${shortDay(l.snapshotDate)}: ${l.productCount.toLocaleString()} products`;
-}
 
 /** How the catalog was read, for the store's detail line. */
 export function sourceLabel(source: string | undefined) {

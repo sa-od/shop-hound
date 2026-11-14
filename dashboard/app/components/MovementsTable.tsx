@@ -3,9 +3,10 @@
 import { useState } from "react";
 import Link from "next/link";
 import { ArrowDown, ArrowUpDown } from "lucide-react";
-import { catalogLine, formatPct, isPartialRead, lastKnownLine, productCountText, slug, sourceLabel, type MovementRow } from "@/lib/brief";
+import { catalogLine, formatPct, isPartialRead, productCountText, slug, sourceLabel, type MovementRow } from "@/lib/brief";
 import { StatusTag } from "./shelf";
 import { ManualReadLink } from "./ManualRead";
+import { LastRead } from "./LastRead";
 
 type Key = "total" | "priceChanges" | "biggest" | "newSkus" | "removed" | "titleChanges";
 
@@ -26,11 +27,17 @@ function subline(r: MovementRow) {
     : `${productCountText(r.productCount, r.complete)} products · ${sourceLabel(r.source)}${isPartialRead(r.source) ? " · partial" : ""}`;
 }
 
-function noDiffText(r: MovementRow) {
+function noDiffText(r: MovementRow): React.ReactNode {
   if (r.status === "first_snapshot") {
     return r.catalog ? `First check: ${catalogLine(r.catalog, r.complete)}` : "First check: baseline saved. Changes show from the next check.";
   }
-  return r.lastKnown ? `Not checked this time. ${lastKnownLine(r.lastKnown)}.` : "Not checked this time.";
+  return r.lastKnown ? (
+    <>
+      Not checked this time. <LastRead l={r.lastKnown} />.
+    </>
+  ) : (
+    "Not checked this time."
+  );
 }
 
 function Cell({ r, k }: { r: MovementRow; k: Exclude<Key, "total"> }) {
