@@ -1,11 +1,14 @@
 // Browser-side: one shared /api/status poller for the whole page, so the top
-// bar and every queue list show the same state. Polls every 5s while stores
+// bar and every queue list show the same state. Polls every 2s while a store is
+// being analysed (its steps), every 5s while stores
 // are queued or running, every 15s otherwise (including while stores only
 // wait to retry: the poll is also what restarts them when their time comes).
 import { useState, useSyncExternalStore } from 'react';
-import type { QueueItem, Status } from './api';
+import type { QueueItem, RunStep, Status } from './api';
 
 const BUSY_POLL_MS = 5_000;
+/** While a store is being analysed, so its steps don't jump. */
+const RUNNING_POLL_MS = 2_000;
 const IDLE_POLL_MS = 15_000;
 
 /** A store that left the queue during this visit. */
@@ -17,6 +20,7 @@ export interface Outcome {
   briefId: string | null;
   /** Finished, but the store can't be read automatically: offer the email request. */
   needsManualRead?: boolean;
+  failedStep?: RunStep;
   manualRead?: { platformName: string; message: string; email: { mailto: string; gmail?: string } };
 }
 
@@ -58,6 +62,7 @@ function apply(next: Status) {
       status: r ? r.status : 'done',
       error: r?.error ?? null,
       briefId: r?.briefId ?? null,
+      ...(r?.failedStep ? { failedStep: r.failedStep } : {}),
       ...(r?.needsManualRead ? { needsManualRead: true, manualRead: r.manualRead } : {}),
     });
   }
@@ -78,8 +83,9 @@ async function poll() {
 function schedule(delay?: number) {
   clearTimeout(timer);
   if (listeners.size === 0) return;
+  const running = state?.queue.some((q) => q.status === 'running');
   const busy = state?.queue.some((q) => q.status !== 'retrying');
-  timer = setTimeout(poll, delay ?? (busy ? BUSY_POLL_MS : IDLE_POLL_MS));
+  timer = setTimeout(poll, delay ?? (running ? RUNNING_POLL_MS : busy ? BUSY_POLL_MS : IDLE_POLL_MS));
 }
 
 function subscribe(l: () => void) {

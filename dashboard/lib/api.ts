@@ -21,7 +21,18 @@ export interface QueueItem {
   attempt?: number;
   /** Total tries before the store is recorded as unverified (status 'retrying' only). */
   maxAttempts?: number;
+  /** status 'running' only: the step in progress (see lib/run-steps.ts). */
+  step?: RunStep;
+  /** When that step began (ISO). */
+  stepStartedAt?: string;
+  /** Short live text for the step, written for the user ("312 products so far"). */
+  detail?: string;
+  /** No previous snapshot: a first check saves a baseline instead of comparing. */
+  baseline?: boolean;
 }
+
+/** The steps of one analysis, in order. */
+export type RunStep = 'reading' | 'comparing' | 'grounding' | 'writing' | 'safety';
 
 export interface Status {
   running: boolean;
@@ -35,6 +46,8 @@ export interface Status {
     status: 'success' | 'failed';
     finishedAt: string | null;
     error: string | null;
+    /** The step a failed run stopped at. */
+    failedStep?: RunStep;
     briefId: string | null;
     /** The store has no readable catalogue: show the "request by email" option (see contactEmail). */
     needsManualRead?: boolean;

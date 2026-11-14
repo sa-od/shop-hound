@@ -5,6 +5,8 @@ import { Check, Clock, Info, Loader2, TriangleAlert } from "lucide-react";
 import { ManualReadLink } from "./ManualRead";
 import type { LiveState } from "@/lib/status-client";
 import { RetryTime } from "./LocalTime";
+import { RunSteps } from "./RunSteps";
+import { stepLabel } from "@/lib/run-steps";
 
 /** The server sends its cap (maxAttempts); 3 for servers that don't. */
 const DEFAULT_MAX_ATTEMPTS = 3;
@@ -19,7 +21,12 @@ export function QueueList({ live }: { live: LiveState }) {
       {queue.map((q) => (
         <li key={q.runId} className="flex items-start gap-2 py-2">
           {q.status === "running" ? (
-            <Loader2 size={14} className="mt-[2px] shrink-0 animate-spin text-ink-3" />
+            // With steps, the spinner sits on the current step instead.
+            q.step ? (
+              <span className="mt-[1px] w-3.5 shrink-0 text-center text-[11px] font-semibold text-ink-3">1</span>
+            ) : (
+              <Loader2 size={14} className="mt-[2px] shrink-0 animate-spin text-ink-3" />
+            )
           ) : q.status === "retrying" ? (
             <Clock size={14} className="mt-[2px] shrink-0 text-warn" />
           ) : (
@@ -36,7 +43,10 @@ export function QueueList({ live }: { live: LiveState }) {
                 {q.reason && <span className="block text-xs text-ink-3">{capitalise(q.reason)}.</span>}
               </>
             ) : (
-              <span className="text-ink-3">{q.status === "running" ? "analysing…" : `queued (#${q.position})`}</span>
+              <>
+                <span className="text-ink-3">{q.status === "running" ? (q.step ? "" : "analysing…") : `queued (#${q.position})`}</span>
+                {q.status === "running" && q.step && <RunSteps item={q} />}
+              </>
             )}
           </span>
         </li>
@@ -62,7 +72,9 @@ export function QueueList({ live }: { live: LiveState }) {
             <>
             <span className="font-semibold">{o.store}</span>{" "}
             {o.status === "failed" ? (
-              <span className="text-warn">failed: {o.error ?? "unknown error"}</span>
+              <span className="text-warn">
+                failed{o.failedStep ? ` at “${stepLabel(o.failedStep)}”` : ""}: {o.error ?? "unknown error"}
+              </span>
             ) : o.briefId ? (
               <>
               <span className="text-ink-3">done · </span>

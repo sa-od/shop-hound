@@ -6,6 +6,7 @@ import { Loader2, Plus, X } from "lucide-react";
 import type { Status } from "@/lib/api";
 import { useLiveStatus } from "@/lib/status-client";
 import { LocalTime, RetryTime } from "./LocalTime";
+import { RUN_STEPS, stepLabel, stepNumber } from "@/lib/run-steps";
 import { NewAnalysisForm } from "./NewAnalysisForm";
 
 /**
@@ -55,6 +56,11 @@ export function RunControl({ initial }: { initial: Status }) {
           <span className="hidden items-center gap-1.5 text-[#d5d7db] md:inline-flex" aria-live="polite">
             <Loader2 size={13} className="animate-spin" />
             Analysing {running.store}
+            {running.step && (
+              <span className="text-[#a8abb2]">
+                · {stepLabel(running.step, running.baseline)} ({stepNumber(running.step)} of {RUN_STEPS.length})
+              </span>
+            )}
             {waiting > 0 && <span className="text-[#a8abb2]">· {waiting} queued</span>}
             {retrying.length > 0 && <span className="text-[#a8abb2]">· {retrying.length} waiting to retry</span>}
           </span>
