@@ -1,10 +1,12 @@
 "use client";
 
 import { useState } from "react";
-import { Loader2, Plus } from "lucide-react";
+import Link from "next/link";
+import { ArrowRight, Loader2, Plus } from "lucide-react";
 import type { Status } from "@/lib/api";
 import { addStore, checkOneStore, type ManualAnswer } from "@/lib/run-client";
-import { useLiveStatus } from "@/lib/status-client";
+import { useLiveStatus, type LiveState, type Outcome } from "@/lib/status-client";
+import { stepLabel } from "@/lib/run-steps";
 import { QueueList } from "./QueueList";
 import { ManualReadLink, PlatformTag } from "./ManualRead";
 
@@ -14,7 +16,8 @@ export function NewAnalysisForm({ initial, autoFocus = false }: { initial: Statu
   const [value, setValue] = useState("");
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<{ text: string; code?: string } | null>(null);
-  const [added, setAdded] = useState<string | null>(null);
+  // The store just added here: its line turns into the result once its run finishes.
+  const [added, setAdded] = useState<{ text: string; runId: string; store: string; at: string } | null>(null);
   // The server checked the store and can't read it automatically: an option, not an error.
   const [manual, setManual] = useState<ManualAnswer | null>(null);
 
@@ -44,7 +47,12 @@ export function NewAnalysisForm({ initial, autoFocus = false }: { initial: Statu
       return;
     }
     setValue("");
-    setAdded(r.alreadyQueued ? `${r.store} is already in the queue.` : `${r.store} added.`);
+    setAdded({
+      text: r.alreadyQueued ? `${r.store} is already in the queue.` : `${r.store} added.`,
+      runId: r.runId,
+      store: r.store,
+      at: new Date().toISOString(),
+    });
   }
 
   // A full queue is a "wait a moment", not a mistake in what was typed.
@@ -91,24 +99,70 @@ export function NewAnalysisForm({ initial, autoFocus = false }: { initial: Statu
             <p>{manual.message}</p>
             <ManualReadLink mailto={manual.mailto} gmail={manual.gmail} email={manual.contactEmail ?? live.status.contactEmail} store={manual.store} className="mt-2" />
           </div>
+        ) : added && !pending && !error ? (
+          <AddedLine added={added} live={live} />
         ) : (
           <p
-            className={`mt-2 text-[13px] leading-relaxed ${error ? (busy ? "text-warn" : "text-cut") : added ? "text-ink" : "text-ink-3"}`}
+            className={`mt-2 text-[13px] leading-relaxed ${error ? (busy ? "text-warn" : "text-cut") : "text-ink-3"}`}
           >
             {pending
               ? "Checking the store first. This usually takes a few seconds, and up to 20 for some sites."
               : (error?.text ??
-                (added ? (
-                  <>
-                    <span className="font-semibold">{added}</span>
-                  </>
-                ) : (
-                  "Takes about a minute per store. Each store you add is re-checked automatically every week for 28 days."
-                )))}
+                "Takes about a minute per store. Each store you add is re-checked automatically every week for 28 days.")}
           </p>
         )}
       </div>
-      <QueueList live={live} />
+      <QueueList live={live} hideRunId={added?.runId} />
     </form>
+  );
+}
+
+/** The finished run for what was added: seen leaving the queue, or the server's last run for it. */
+function resultFor(added: { runId: string; store: string; at: string }, live: LiveState): Outcome | null {
+  const seen = live.outcomes.find((o) => o.runId === added.runId);
+  if (seen) return seen;
+  const r = live.status.lastRun;
+  if (!r || live.queue.some((q) => q.runId === added.runId)) return null;
+  const same = r.runId === added.runId || (r.store === added.store && (r.finishedAt ?? "") > added.at);
+  if (!same) return null;
+  return {
+    runId: r.runId,
+    store: r.store ?? added.store,
+    status: r.status,
+    error: r.error,
+    briefId: r.briefId,
+    ...(r.failedStep ? { failedStep: r.failedStep } : {}),
+    ...(r.needsManualRead ? { needsManualRead: true, manualRead: r.manualRead } : {}),
+  };
+}
+
+function AddedLine({ added, live }: { added: { text: string; runId: string; store: string; at: string }; live: LiveState }) {
+  const o = resultFor(added, live);
+  if (!o) return <p className="mt-2 text-[13px] font-semibold leading-relaxed text-ink">{added.text}</p>;
+  if (o.needsManualRead)
+    return (
+      <div className="mt-3 rounded-md border border-edge bg-shelf px-3.5 py-3 text-[13px] leading-relaxed text-ink-2">
+        <PlatformTag name={o.manualRead?.platformName} className="mb-2" />
+        <p>{o.manualRead?.message ?? `We can’t read ${o.store} automatically.`}</p>
+        <ManualReadLink mailto={o.manualRead?.email.mailto} gmail={o.manualRead?.email.gmail} email={live.status.contactEmail} store={o.store} className="mt-2" />
+      </div>
+    );
+  if (o.status === "failed")
+    return (
+      <p className="mt-2 text-[13px] leading-relaxed text-cut">
+        <span className="font-semibold">{o.store} couldn’t be analysed</span>
+        {o.failedStep ? ` at “${stepLabel(o.failedStep)}”` : ""}: {o.error ?? "unknown error"}
+      </p>
+    );
+  return (
+    <p className="mt-2 text-[13px] leading-relaxed text-ink">
+      <span className="font-semibold">{o.store} is ready.</span>{" "}
+      <Link
+        href={o.briefId ? `/briefs/${o.briefId}` : "/briefs"}
+        className="inline-flex items-center gap-1 font-semibold underline underline-offset-2 hover:no-underline"
+      >
+        See the brief <ArrowRight size={13} />
+      </Link>
+    </p>
   );
 }

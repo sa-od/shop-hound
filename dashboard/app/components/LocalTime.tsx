@@ -59,3 +59,14 @@ export function RetryTime({ iso }: { iso?: string }) {
     </time>
   );
 }
+
+/** "{before} at 2:20 pm" until the retry time, then "trying again now…". */
+export function RetryPhrase({ iso, before }: { iso?: string; before: string }) {
+  const local = useMounted();
+  if (local && iso && Date.parse(iso) <= Date.now()) return <>trying again now…</>;
+  return (
+    <>
+      {before} <RetryTime iso={iso} />
+    </>
+  );
+}

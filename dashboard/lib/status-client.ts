@@ -9,6 +9,8 @@ import type { QueueItem, RunStep, Status } from './api';
 const BUSY_POLL_MS = 5_000;
 /** While a store is being analysed, so its steps don't jump. */
 const RUNNING_POLL_MS = 2_000;
+/** Poll this long after a retry is due, so the server sees it as due. */
+const RETRY_GRACE_MS = 5_000;
 const IDLE_POLL_MS = 15_000;
 
 /** A store that left the queue during this visit. */
@@ -85,7 +87,11 @@ function schedule(delay?: number) {
   if (listeners.size === 0) return;
   const running = state?.queue.some((q) => q.status === 'running');
   const busy = state?.queue.some((q) => q.status !== 'retrying');
-  timer = setTimeout(poll, delay ?? (running ? RUNNING_POLL_MS : busy ? BUSY_POLL_MS : IDLE_POLL_MS));
+  let wait = delay ?? (running ? RUNNING_POLL_MS : busy ? BUSY_POLL_MS : IDLE_POLL_MS);
+  // A queue holding only retries wakes when this poll reaches the server, so poll just after the soonest retry time.
+  const retryAts = (state?.queue ?? []).filter((q) => q.status === 'retrying' && q.retryAt).map((q) => Date.parse(q.retryAt!));
+  if (retryAts.length) wait = Math.min(wait, Math.max(1_000, Math.min(...retryAts) + RETRY_GRACE_MS - Date.now()));
+  timer = setTimeout(poll, wait);
 }
 
 function subscribe(l: () => void) {

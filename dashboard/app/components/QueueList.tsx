@@ -4,7 +4,7 @@ import Link from "next/link";
 import { Check, Clock, Info, Loader2, TriangleAlert } from "lucide-react";
 import { ManualReadLink } from "./ManualRead";
 import type { LiveState } from "@/lib/status-client";
-import { RetryTime } from "./LocalTime";
+import { RetryPhrase } from "./LocalTime";
 import { RunSteps } from "./RunSteps";
 import { stepLabel } from "@/lib/run-steps";
 
@@ -15,9 +15,10 @@ const DEFAULT_MAX_ATTEMPTS = 3;
  * Stores in the queue. Once the queue is empty, only the store that finished
  * last shows its result; earlier ones aren't kept here (they're in Briefs).
  */
-export function QueueList({ live }: { live: LiveState }) {
+/** `hideRunId`: a run whose result the add form already shows in its own line. */
+export function QueueList({ live, hideRunId }: { live: LiveState; hideRunId?: string }) {
   const { queue, status } = live;
-  const outcomes = queue.length === 0 ? live.outcomes.slice(0, 1) : [];
+  const outcomes = queue.length === 0 ? live.outcomes.slice(0, 1).filter((o) => o.runId !== hideRunId) : [];
   if (queue.length === 0 && outcomes.length === 0) return null;
 
   return (
@@ -41,7 +42,7 @@ export function QueueList({ live }: { live: LiveState }) {
             {q.status === "retrying" ? (
               <>
                 <span className="text-warn">
-                  waiting to try again <RetryTime iso={q.retryAt} />
+                  <RetryPhrase iso={q.retryAt} before="waiting to try again" />
                   {q.attempt ? ` (try ${q.attempt + 1} of ${q.maxAttempts ?? DEFAULT_MAX_ATTEMPTS})` : ""}
                 </span>
                 {q.reason && <span className="block text-xs text-ink-3">{capitalise(q.reason)}.</span>}

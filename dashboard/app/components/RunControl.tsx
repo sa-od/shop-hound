@@ -5,7 +5,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { Loader2, Plus, X } from "lucide-react";
 import type { Status } from "@/lib/api";
 import { useLiveStatus } from "@/lib/status-client";
-import { LocalTime, RetryTime } from "./LocalTime";
+import { LocalTime, RetryPhrase } from "./LocalTime";
 import { RUN_STEPS, stepLabel, stepNumber } from "@/lib/run-steps";
 import { NewAnalysisForm } from "./NewAnalysisForm";
 
@@ -74,7 +74,7 @@ export function RunControl({ initial }: { initial: Status }) {
         ) : retrying.length > 0 ? (
           <span className="hidden text-[#d5d7db] md:inline" aria-live="polite">
             {retrying.length === 1
-              ? <>{retrying[0].store}: trying again <RetryTime iso={retrying[0].retryAt} /></>
+              ? <>{retrying[0].store}: <RetryPhrase iso={retrying[0].retryAt} before="trying again" /></>
               : `${retrying.length} stores waiting to try again`}
           </span>
         ) : failure ? (
