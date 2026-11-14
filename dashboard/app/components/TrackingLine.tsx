@@ -39,7 +39,7 @@ export function TrackingLine({ tracking, competitors, unreadable }: { tracking: 
     const failed = results.find((r) => !r.ok);
     setNote(
       failed && !failed.ok
-        ? failed.error
+        ? failed.error // a manual-read answer carries its message here too
         : "Added to the queue. The new brief appears in Briefs when it’s ready.",
     );
   }

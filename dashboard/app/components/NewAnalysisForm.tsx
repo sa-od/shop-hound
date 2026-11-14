@@ -6,6 +6,7 @@ import type { Status } from "@/lib/api";
 import { addStore, checkOneStore } from "@/lib/run-client";
 import { useLiveStatus } from "@/lib/status-client";
 import { QueueList } from "./QueueList";
+import { ManualReadLink } from "./ManualRead";
 
 /** Add one store at a time; each add joins the queue, so the next can be typed straight away. */
 export function NewAnalysisForm({ initial, autoFocus = false }: { initial: Status; autoFocus?: boolean }) {
@@ -14,6 +15,8 @@ export function NewAnalysisForm({ initial, autoFocus = false }: { initial: Statu
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<{ text: string; code?: string } | null>(null);
   const [added, setAdded] = useState<string | null>(null);
+  // The server checked the store and can't read it automatically: an option, not an error.
+  const [manual, setManual] = useState<{ store: string; message: string; contactEmail?: string } | null>(null);
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -23,13 +26,19 @@ export function NewAnalysisForm({ initial, autoFocus = false }: { initial: Statu
     if (problem) {
       setError({ text: problem, code: "multiple" });
       setAdded(null);
+      setManual(null);
       return;
     }
     setPending(true);
     setError(null);
     setAdded(null);
+    setManual(null);
     const r = await addStore(raw);
     setPending(false);
+    if (!r.ok && r.manual) {
+      setManual(r.manual); // keep what they typed in the field
+      return;
+    }
     if (!r.ok) {
       setError({ text: r.error, code: r.code });
       return;
@@ -59,6 +68,7 @@ export function NewAnalysisForm({ initial, autoFocus = false }: { initial: Statu
           onChange={(e) => {
             setValue(e.target.value);
             if (error) setError(null);
+            if (manual) setManual(null);
           }}
           placeholder="goodr.com"
           aria-invalid={error && !busy ? true : undefined}
@@ -71,23 +81,32 @@ export function NewAnalysisForm({ initial, autoFocus = false }: { initial: Statu
           className="inline-flex h-10 items-center justify-center gap-1.5 rounded-md bg-ink px-4 text-sm font-semibold text-white transition-colors duration-150 hover:bg-[#2a2c30] disabled:cursor-not-allowed disabled:bg-[#9a9da4]"
         >
           {pending ? <Loader2 size={15} className="animate-spin" /> : <Plus size={15} />}
-          {pending ? "Adding…" : "Add store"}
+          {pending ? "Checking the store…" : "Add store"}
         </button>
       </div>
-      <p
-        id="analysis-help"
-        className={`mt-2 text-[13px] leading-relaxed ${error ? (busy ? "text-warn" : "text-cut") : added ? "text-ink" : "text-ink-3"}`}
-        aria-live="polite"
-      >
-        {error?.text ??
-          (added ? (
-            <>
-              <span className="font-semibold">{added}</span> You can add the next one now.
-            </>
-          ) : (
-            "Takes about a minute per store. Each store you add is re-checked automatically every week for 28 days."
-          ))}
-      </p>
+      <div id="analysis-help" aria-live="polite">
+        {manual ? (
+          <div className="mt-3 rounded-md border border-edge bg-shelf px-3.5 py-3 text-[13px] leading-relaxed text-ink-2">
+            <p>{manual.message}</p>
+            <ManualReadLink email={manual.contactEmail ?? live.status.contactEmail} store={manual.store} className="mt-2" />
+          </div>
+        ) : (
+          <p
+            className={`mt-2 text-[13px] leading-relaxed ${error ? (busy ? "text-warn" : "text-cut") : added ? "text-ink" : "text-ink-3"}`}
+          >
+            {pending
+              ? "Checking the store first. This usually takes a few seconds, and up to 20 for some sites."
+              : (error?.text ??
+                (added ? (
+                  <>
+                    <span className="font-semibold">{added}</span> You can add the next one now.
+                  </>
+                ) : (
+                  "Takes about a minute per store. Each store you add is re-checked automatically every week for 28 days."
+                )))}
+          </p>
+        )}
+      </div>
       <QueueList live={live} />
     </form>
   );
