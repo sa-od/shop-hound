@@ -82,21 +82,11 @@ function toSummary(d: Omit<BriefDoc, 'briefMarkdown' | 'diff'>): BriefSummary {
   };
 }
 
-/**
- * Save a brief. Identified by (week, competitor set): re-running the same
- * competitors in a week replaces that card in place (same id, so links keep
- * working); a different set makes a new one. Returns the brief id.
- */
+/** Save a brief. Every run gets its own brief (re-runs never replace one). Returns its id. */
 export async function saveBrief(brief: Omit<BriefDoc, '_id' | 'createdAt'>): Promise<string> {
-  const doc = await db()
-    .collection<BriefDoc>(BRIEFS)
-    .findOneAndUpdate(
-      { weekOf: brief.weekOf, competitorKey: brief.competitorKey },
-      { $set: { ...brief, createdAt: new Date() } },
-      { upsert: true, returnDocument: 'after', projection: { _id: 1 } },
-    );
-  if (!doc) throw new Error('saveBrief: upsert returned no document');
-  return doc._id.toHexString();
+  const _id = new ObjectId();
+  await db().collection<BriefDoc>(BRIEFS).insertOne({ ...brief, _id, createdAt: new Date() });
+  return _id.toHexString();
 }
 
 /** Newest briefs first, without the heavy markdown/diff; removed-product totals are counted in the database. */
@@ -121,15 +111,31 @@ export async function listRecentBriefs(limit = 50): Promise<(BriefSummary & { re
   return docs.map(d => ({ ...toSummary(d), removedTotal: d.removedTotal }));
 }
 
-/** Recent briefs covering any of the given competitors — trend context for the agent. */
-export async function briefsForCompetitors(competitors: string[], limit = 4): Promise<BriefSummary[]> {
+/**
+ * Recent briefs covering any of the given competitors — trend context for the
+ * agent. One per day (the latest), from days before `beforeDay` only, so a
+ * day's many re-runs don't crowd out the earlier weeks.
+ */
+export async function briefsForCompetitors(competitors: string[], limit = 4, beforeDay?: string): Promise<BriefSummary[]> {
   const docs = await db()
     .collection<BriefDoc>(BRIEFS)
-    .find({ 'competitors.competitor': { $in: competitors } }, { projection: SUMMARY_PROJECTION })
+    .find(
+      { 'competitors.competitor': { $in: competitors }, ...(beforeDay ? { weekOf: { $lt: beforeDay } } : {}) },
+      { projection: SUMMARY_PROJECTION },
+    )
     .sort({ createdAt: -1 })
-    .limit(limit)
+    .limit(limit * 10)
     .toArray();
-  return docs.map(toSummary);
+  const seen = new Set<string>();
+  return docs
+    .filter(d => {
+      const day = `${d.competitorKey}|${d.weekOf}`;
+      if (seen.has(day)) return false;
+      seen.add(day);
+      return true;
+    })
+    .slice(0, limit)
+    .map(toSummary);
 }
 
 export async function getBrief(id: string): Promise<BriefDetail | null> {
@@ -163,12 +169,14 @@ export interface StoreSummary {
   /** Products in the latest readable run, checkout add-ons left out as on the brief page (null: never read). */
   productCount: number | null;
   /**
-   * Change vs the readable run before it (null: none). Computed from the raw
-   * catalogue counts, which were measured the same way in every run; the
-   * add-on-free count only exists since add-ons were left out, so mixing the
-   * two would misstate the change.
+   * Change in products since the read the latest run was compared with —
+   * about a week earlier (null: not compared yet). Raw catalogue counts on
+   * both sides: the add-on-free count only exists since add-ons were left
+   * out, so mixing the two would misstate the change.
    */
   productDelta: number | null;
+  /** Date (YYYY-MM-DD, UTC) of the read productDelta is measured from. */
+  deltaSince?: string;
   /** false: that latest read was cut off (productCount is a lower bound). */
   complete?: boolean;
   /** The latest brief is a manual-read case. */
@@ -185,8 +193,10 @@ export interface RunSummary {
   status: 'verified' | 'first_snapshot';
   trigger?: BriefTrigger;
   productCount: number;
-  /** Change vs the run listed after it (raw counts; see StoreSummary.productDelta). Absent on the oldest run listed. */
+  /** Change since the read this run was compared with, about a week earlier (raw counts). Absent on first checks. */
   productDelta?: number;
+  /** Date (YYYY-MM-DD, UTC) of the read this run was compared with. */
+  deltaSince?: string;
   complete?: boolean;
   priceChanges: number;
   newSkus: number;
@@ -195,13 +205,14 @@ export interface RunSummary {
 }
 
 type SlimBrief = Pick<BriefDoc, '_id' | 'competitorKey' | 'createdAt' | 'competitors'> & {
-  diff?: { diffs?: { competitor: string; catalog?: { productCount?: number } }[] };
+  diff?: { diffs?: { competitor: string; previousProductCount?: number; previousSnapshotDate?: string | null; removedSkus?: unknown[]; catalog?: { productCount?: number } }[] };
 };
 
 /** Fields listStores/listRuns need, without the heavy brief and product lists. */
 const SLIM_PROJECTION = {
   competitorKey: 1, createdAt: 1, trigger: 1, greenLight: 1, competitors: 1,
   'diff.diffs.competitor': 1, 'diff.diffs.catalog.productCount': 1,
+  'diff.diffs.previousProductCount': 1, 'diff.diffs.previousSnapshotDate': 1, 'diff.diffs.removedSkus.title': 1,
 } as const;
 const SLIM_PROJECTION_WITH_REMOVED = { ...SLIM_PROJECTION, removedTotal: 1 } as const;
 
@@ -218,6 +229,25 @@ const readCount = (b: SlimBrief) => {
     raw: read.reduce((n, c) => n + c.productCount, 0),
     complete: !read.some(c => c.complete === false),
   };
+};
+
+/**
+ * Change since the read(s) this brief compared with: raw counts, verified
+ * stores only. Older briefs without previousProductCount derive it from the
+ * changes (previous = now − new + removed, exact for the id-matched diff).
+ */
+const compared = (b: SlimBrief) => {
+  const diffs = (b.diff?.diffs ?? []).filter(d => b.competitors.some(c => c.competitor === d.competitor && c.status === 'verified'));
+  if (diffs.length === 0) return null;
+  let delta = 0;
+  for (const d of diffs) {
+    const c = b.competitors.find(x => x.competitor === d.competitor)!;
+    // Matching is one-to-one, so the earlier count is exactly now − new + removed.
+    const previous = d.previousProductCount ?? c.productCount - c.newSkus + (d.removedSkus?.length ?? 0);
+    delta += c.productCount - previous;
+  }
+  const since = diffs.map(d => d.previousSnapshotDate).filter((x): x is string => !!x).sort()[0];
+  return { delta, ...(since ? { since } : {}) };
 };
 
 /** Every store set with a brief, newest latest brief first. */
@@ -241,7 +271,7 @@ export async function listStores(): Promise<StoreSummary[]> {
     const latest = list[0];
     const readableRuns = list.filter(b => b.competitors.some(isReadable));
     const last = readableRuns[0] ? readCount(readableRuns[0]) : null;
-    const prev = readableRuns[1] ? readCount(readableRuns[1]) : null;
+    const change = readableRuns[0] ? compared(readableRuns[0]) : null;
     return {
       store: key.split(',').join(', '),
       competitorKey: key,
@@ -249,7 +279,8 @@ export async function listStores(): Promise<StoreSummary[]> {
       latestAt: latest.createdAt.toISOString(),
       runCount: readableRuns.length,
       productCount: last ? last.shown : null,
-      productDelta: last && prev ? last.raw - prev.raw : null,
+      productDelta: change ? change.delta : null,
+      ...(change?.since ? { deltaSince: change.since } : {}),
       ...(last && !last.complete ? { complete: false } : {}),
       ...(latest.competitors.length > 0 && latest.competitors.every(c => c.needsManualRead) ? { needsManualRead: true } : {}),
       tracking: tracking.get(key) ?? { tracked: false, trackedUntil: null, nextCheck: null },
@@ -275,9 +306,9 @@ export async function listRuns(competitorKey: string, limit = 50): Promise<RunSu
       { $project: SLIM_PROJECTION_WITH_REMOVED },
     ])
     .toArray();
-  return docs.map((d, i) => {
+  return docs.map(d => {
     const read = d.competitors.filter(isReadable);
-    const older = docs[i + 1];
+
     const sum = (k: 'priceChanges' | 'newSkus' | 'titleChanges') => read.reduce((n, c) => n + c[k], 0);
     const { shown: productCount, complete } = readCount(d);
     return {
@@ -287,7 +318,7 @@ export async function listRuns(competitorKey: string, limit = 50): Promise<RunSu
       status: read.some(c => c.status === 'verified') ? 'verified' : 'first_snapshot',
       ...(d.trigger ? { trigger: d.trigger } : {}),
       productCount,
-      ...(older ? { productDelta: readCount(d).raw - readCount(older).raw } : {}),
+      ...((c => (c ? { productDelta: c.delta, ...(c.since ? { deltaSince: c.since } : {}) } : {}))(compared(d))),
       ...(complete ? {} : { complete: false }),
       priceChanges: sum('priceChanges'),
       newSkus: sum('newSkus'),

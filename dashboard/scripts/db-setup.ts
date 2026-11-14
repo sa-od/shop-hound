@@ -24,8 +24,8 @@ async function main() {
   await db().collection(SNAPSHOT_PARTS).createIndex({ snapshotId: 1, part: 1 });
   // Retention sweep + distinct dates per competitor.
   await db().collection(PRODUCT_VECTORS).createIndex({ competitor: 1, snapshotDate: 1 });
-  // One brief per (week, competitor set) — re-runs overwrite.
-  await db().collection(BRIEFS).createIndex({ weekOf: 1, competitorKey: 1 }, { unique: true });
+  // Every run has its own brief: the old one-brief-per-day unique index must go.
+  await db().collection(BRIEFS).dropIndex('weekOf_1_competitorKey_1').catch(() => {});
   await db().collection(BRIEFS).createIndex({ createdAt: -1 });
   await db().collection(BRIEFS).createIndex({ 'competitors.competitor': 1, createdAt: -1 });
   // At most ONE running run, enforced by the database: a second insert with

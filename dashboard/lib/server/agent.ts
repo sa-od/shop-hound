@@ -26,6 +26,7 @@ STRICT GROUNDING RULES (your output is audited by an AI hallucination detector �
 - If a competitor's "source" is "firecrawl", it was read partially from its web pages: say so, and do NOT say week-over-week analysis starts next week — partial reads are never compared week over week. Describe its positioning from "catalog" as above.
 - If NO competitor is "verified" (only first_snapshot and unverified), there are no changes to act on and you do not know the merchant's own catalog: write only the Executive Summary and Competitor Movements sections. Do NOT write a Strategic Recommendations section.
 - New SKUs may carry a "closestExisting" field — the competitor's semantically closest existing product (from vector search over last week's catalog). Use it to position the launch ("sits next to their {title} at \${price}"), citing only the given title/price/similarity.
+- A "verified" competitor was compared with its read on "previousSnapshotDate" (usually about a week earlier, but it can be fewer days when the store was first read recently). Describe its changes as changes since that read, and do not call them "this week" or "week-over-week" unless previousSnapshotDate is 7 or more days before currentSnapshotDate.
 - When a VERIFIED HISTORY block is provided, add a "## Week-over-Week Trends" section comparing this week to those archived briefs (e.g. consecutive weeks of price cuts, catalog growth). Cite ONLY numbers present in the history or the diff.
 
 STRICT COMPLIANCE RULES (your output is audited for policy violations — violations are blocked):

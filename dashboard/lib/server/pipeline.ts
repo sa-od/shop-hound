@@ -1,7 +1,7 @@
 import { type CompetitorSnapshot, type CompetitorDiff, type StructuredDiff, type GuardrailVerdict } from './types';
 import { scrapeCatalog, normalizeDomain, msUntil, StoreBlockedError, ManualReadNeededError } from './scraper';
 import { embedProducts, productToEmbeddingText } from './embeddings';
-import { saveSnapshot, getPreviousSnapshot, getLatestSnapshotInfo, isFullCatalog, loadReusableVectors, embeddingTextKey } from './snapshot-store';
+import { saveSnapshot, getBaselineSnapshot, getLatestSnapshotInfo, isFullCatalog, loadReusableVectors, embeddingTextKey } from './snapshot-store';
 import { summarizeCatalog } from './catalog';
 import { diffSnapshots, verifyDiffAgainstPayload } from './diff-engine';
 import { groundingCheck, safetyAudit, maskCompetitorDomains } from './enkrypt';
@@ -191,8 +191,9 @@ export async function runAnalysis(opts: RunOptions): Promise<RunResult> {
   }
 
   // ── 2. Embed → save snapshot (next week's diff baseline) + product vectors ──
-  // Previous snapshots are read BEFORE today's is written, so a re-run on the
-  // same day still diffs against last week, never against itself.
+  // Each store is compared with its read from about a week earlier
+  // (getBaselineSnapshot), never with a read from the same day — so re-runs
+  // all show the weekly change, not the minutes since the last run.
   let vectorsUpserted = 0;
   const embedUntil = deadlineAt === undefined ? undefined : deadlineAt - AFTER_EMBED_MS;
   const vectorsByCompetitor = new Map<string, Map<string, number[]>>();
@@ -203,7 +204,7 @@ export async function runAnalysis(opts: RunOptions): Promise<RunResult> {
     // A partial read (AI-read, or time ran out) is never diffed: baseline only.
     previousByCompetitor.set(
       snapshot.competitor,
-      isFullCatalog(snapshot.source, snapshot.complete) ? await getPreviousSnapshot(snapshot.competitor, snapshot.snapshotDate) : null,
+      isFullCatalog(snapshot.source, snapshot.complete) ? await getBaselineSnapshot(snapshot.competitor, snapshot.snapshotDate) : null,
     );
     if (snapshots.length > 0 && snapshots.every(s => previousByCompetitor.has(s.competitor))) {
       const prev = [...previousByCompetitor.values()];
@@ -316,7 +317,7 @@ export async function runAnalysis(opts: RunOptions): Promise<RunResult> {
     progress({ step: 'writing' });
     let historyEntries: unknown[] = [];
     try {
-      historyEntries = (await briefsForCompetitors([...runCompetitors], 4)).map(b => ({
+      historyEntries = (await briefsForCompetitors([...runCompetitors], 4, snapshotDate)).map(b => ({
           weekOf: b.weekOf,
           createdAt: b.createdAt,
           greenLight: b.greenLight,

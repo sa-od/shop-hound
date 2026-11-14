@@ -100,3 +100,11 @@ test('quoted names pair up in order: short quotes no longer produce a fake produ
   // a real invented product is still caught
   assert.equal(verifyProductGrounding('They launched "Cloud Walker Pro Max" today.', diff).length, 1);
 });
+
+test('vector retention keeps every snapshot a future run could compare with', async () => {
+  const { vectorDatesToKeep } = await import('./snapshot-store');
+  // today Nov 20: cutoff Nov 13 → keep the latest on/before it (Nov 12) and everything after
+  assert.deepEqual(vectorDatesToKeep(['2026-11-01', '2026-11-05', '2026-11-12', '2026-11-15', '2026-11-20'], '2026-11-20'), ['2026-11-12', '2026-11-15', '2026-11-20']);
+  // only recent reads: all kept
+  assert.deepEqual(vectorDatesToKeep(['2026-11-14', '2026-11-15'], '2026-11-15'), ['2026-11-14', '2026-11-15']);
+});

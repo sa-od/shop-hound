@@ -60,9 +60,29 @@ export const embeddingTextKey = (text: string) => createHash('sha1').update(text
 
 const snapshotId = (competitor: string, date: string) => `${competitor}|${date}`;
 
-// Keep embeddings for only the newest N snapshots per store: the lookup only
-// ever reads the previous one, and vectors are most of the storage.
+/** A run compares with the store's read from at least this many days earlier. */
+export const BASELINE_DAYS = 7;
+const DAY_MS = 24 * 60 * 60 * 1000;
+const daysBefore = (date: string, days: number) => new Date(Date.parse(`${date}T00:00:00Z`) - days * DAY_MS).toISOString().slice(0, 10);
+
+// Embeddings are kept only for snapshots a future run could compare with (see
+// vectorDatesToKeep): the closest-product lookup reads the baseline's vectors,
+// and vectors are most of the storage.
 const KEEP_VECTOR_SNAPSHOTS = 2;
+
+/**
+ * Snapshot dates whose vectors may still be a baseline. A run on day D
+ * compares with the latest read on or before D − BASELINE_DAYS (else the
+ * earliest earlier read), so from `today` on that is: every date after
+ * today − BASELINE_DAYS, plus the latest date on or before it. Pure.
+ */
+export function vectorDatesToKeep(dates: string[], today: string): string[] {
+  const sorted = [...new Set(dates)].sort();
+  const cutoff = daysBefore(today, BASELINE_DAYS);
+  const recent = sorted.filter(d => d > cutoff);
+  const lastOld = sorted.filter(d => d <= cutoff).at(-1);
+  return [...new Set([...(lastOld ? [lastOld] : []), ...recent, ...sorted.slice(-KEEP_VECTOR_SNAPSHOTS)])].sort();
+}
 const VECTOR_WRITE_BATCH = 500;
 
 /**
@@ -125,10 +145,10 @@ export async function saveSnapshot(snapshot: CompetitorSnapshot, vectors: (numbe
     await coll.insertMany(docs.slice(i, i + VECTOR_WRITE_BATCH), { ordered: false });
   }
 
-  // Retention: drop vectors for all but the newest snapshots of this store.
+  // Retention: drop vectors no future run can compare with.
   const keepDates = await coll
     .distinct('snapshotDate', { competitor })
-    .then(dates => (dates as string[]).sort().slice(-KEEP_VECTOR_SNAPSHOTS));
+    .then(dates => vectorDatesToKeep(dates as string[], snapshotDate));
   await coll.deleteMany({ competitor, snapshotDate: { $nin: keepDates } });
 }
 
@@ -141,16 +161,18 @@ export async function saveSnapshot(snapshot: CompetitorSnapshot, vectors: (numbe
 export const isFullCatalog = (source: string | undefined, complete?: boolean) => source !== 'firecrawl' && complete !== false;
 
 /**
- * Most recent FULL-catalogue snapshot for a competitor strictly BEFORE the
- * given date (AI reads in between are skipped — see isFullCatalog).
+ * The FULL-catalogue snapshot a run on `date` compares with (AI and partial
+ * reads are skipped — see isFullCatalog): the latest read at least
+ * BASELINE_DAYS earlier, so every run shows about a week of change however
+ * often it is run. When there is none that old yet, the earliest earlier read
+ * (the brief names its date). Never a read from the same day.
  */
-export async function getPreviousSnapshot(competitor: string, beforeDate: string): Promise<CompetitorSnapshot | null> {
-  const doc = await db()
-    .collection<SnapshotDoc>(SNAPSHOTS)
-    .find({ competitor, snapshotDate: { $lt: beforeDate }, source: { $ne: 'firecrawl' }, complete: { $ne: false } })
-    .sort({ snapshotDate: -1 })
-    .limit(1)
-    .next();
+export async function getBaselineSnapshot(competitor: string, date: string): Promise<CompetitorSnapshot | null> {
+  const full = { competitor, source: { $ne: 'firecrawl' as const }, complete: { $ne: false as const } };
+  const coll = db().collection<SnapshotDoc>(SNAPSHOTS);
+  const doc =
+    (await coll.find({ ...full, snapshotDate: { $lte: daysBefore(date, BASELINE_DAYS) } }).sort({ snapshotDate: -1 }).limit(1).next()) ??
+    (await coll.find({ ...full, snapshotDate: { $lt: date } }).sort({ snapshotDate: 1 }).limit(1).next());
   if (!doc) return null;
   try {
     return competitorSnapshotSchema.parse({

@@ -36,6 +36,7 @@ export async function diffSnapshots(
     previousSnapshotDate: previous?.snapshotDate ?? null,
     currentSnapshotDate: current.snapshotDate,
     productCount: current.products.length,
+    ...(previous ? { previousProductCount: previous.products.length } : {}),
   };
 
   if (!previous) {
