@@ -1,5 +1,7 @@
 import { NextResponse } from 'next/server';
 import { resolveStoreInput } from '@/lib/server/store-url';
+import { probeCatalog, NO_CATALOGUE_REASON } from '@/lib/server/scraper';
+import { aiReadEnabled, CONTACT_EMAIL, manualReadMessage } from '@/lib/server/contact';
 import { queueRun } from '@/lib/server/start-run';
 import { QueueFullError } from '@/lib/server/runs';
 
@@ -11,6 +13,9 @@ export const maxDuration = 300;
  * POST /api/run { store: string } — add ONE store to the analysis queue.
  *
  * 202 { runId, store, position, existing }   store = cleaned domain; position 1 = running now / next
+ * 200 { accepted: false, code: 'manual_read', store, message, contactEmail }
+ *     the store has no catalogue we can read (and AI reading is off): nothing
+ *     is queued; `message` tells the user, and they can email contactEmail.
  * 400 { error, code }   code: multiple | invalid_url | not_found | private_address
  * 429 { error, code: 'queue_full' }
  *
@@ -25,6 +30,22 @@ export async function POST(req: Request) {
 
   const parsed = await resolveStoreInput(body?.store);
   if (!parsed.ok) return NextResponse.json({ error: parsed.error, code: parsed.code }, { status: 400 });
+
+  // Answer at once when the store clearly has no catalogue we can read,
+  // instead of queueing it and reporting a run later. Uncertain cases
+  // (refused, slow, Shopify pausing us) are queued as usual.
+  if (!aiReadEnabled()) {
+    const probe = await probeCatalog(parsed.domain).catch(() => ({ kind: 'unknown' as const }));
+    if (probe.kind === 'none') {
+      return NextResponse.json({
+        accepted: false,
+        code: 'manual_read',
+        store: parsed.domain,
+        message: manualReadMessage(parsed.domain, NO_CATALOGUE_REASON),
+        contactEmail: CONTACT_EMAIL,
+      });
+    }
+  }
 
   try {
     const { run, position, existing } = await queueRun([parsed.domain], 'dashboard');

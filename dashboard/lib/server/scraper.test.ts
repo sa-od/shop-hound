@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readShopifyCatalog, parseRelayPage, StoreBlockedError, StoreUnreachableError, type CatalogPage, type PageFetcher } from './scraper';
+import { readShopifyCatalog, parseRelayPage, servedByShopify, StoreBlockedError, StoreUnreachableError, type CatalogPage, type PageFetcher } from './scraper';
 
 const product = (id: number) => ({ id, handle: `p-${id}`, title: `Product ${id}`, variants: [{ price: '10.00', available: true }] });
 const catalog = (from: number, n: number): CatalogPage => ({
@@ -117,4 +117,12 @@ test('a store that repeats its last page forever ends the read instead of loopin
   const { products, complete } = await readShopifyCatalog('a.com', f, ['a.com']);
   assert.equal(products.length, 250);
   assert.equal(complete, true);
+});
+
+test("only Shopify's own responses count as Shopify (a site's bot check does not)", () => {
+  const h = (o: Record<string, string>) => new Headers(o);
+  assert.equal(servedByShopify(h({ 'powered-by': 'Shopify', server: 'cloudflare' })), true); // goodr.com
+  assert.equal(servedByShopify(h({ 'shopify-complexity-score': '590' })), true);
+  assert.equal(servedByShopify(h({ server: 'Vercel', 'x-vercel-mitigated': 'challenge' })), false); // bombas.com
+  assert.equal(servedByShopify(h({ server: 'cloudflare' })), false);
 });

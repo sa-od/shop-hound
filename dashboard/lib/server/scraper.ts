@@ -53,15 +53,33 @@ export class StoreUnreachableError extends Error {}
  */
 export class ManualReadNeededError extends Error {}
 
+export const NO_CATALOGUE_REASON = "it doesn't publish a product catalogue we can read (it isn't a standard Shopify store)";
+
 /**
  * The store refused us for now (429 rate limit, 403 block) — temporary, so
  * the run is retried later instead of the store being written off.
  * `retryAfterMs` is the store's own Retry-After, when it sent one.
  */
 export class StoreBlockedError extends Error {
-  constructor(message: string, readonly retryAfterMs: number | null, readonly status: number) {
+  constructor(
+    message: string,
+    readonly retryAfterMs: number | null,
+    readonly status: number,
+    /** The refusal came from Shopify itself (its per-IP limit), not the site's own bot protection. */
+    readonly fromShopify = false,
+  ) {
     super(message);
   }
+}
+
+/**
+ * Did Shopify serve this response? Shopify marks every response, errors
+ * included, with `powered-by: Shopify` (and `shopify-*` headers). A 429 from
+ * anything else is that site's own bot protection — e.g. bombas.com runs on
+ * Vercel and challenges bots — and says nothing about Shopify's limits.
+ */
+export function servedByShopify(headers: { get(name: string): string | null }): boolean {
+  return /shopify/i.test(headers.get('powered-by') ?? '') || headers.get('shopify-complexity-score') !== null || headers.get('x-shopid') !== null;
 }
 
 /** Retry-After as milliseconds: delta-seconds or an HTTP date. */
@@ -99,7 +117,7 @@ const isBlockStatus = (status: number) => status === 429 || status === 403;
 function blockedError(page: CatalogPage): StoreBlockedError {
   return page.challenged
     ? new StoreBlockedError('the store answered with a bot check instead of its catalogue', page.retryAfterMs, 403)
-    : new StoreBlockedError(httpReason(page.status), page.retryAfterMs, page.status);
+    : new StoreBlockedError(httpReason(page.status), page.retryAfterMs, page.status, page.fromShopify === true);
 }
 const isRefused = (page: CatalogPage) => isBlockStatus(page.status) || page.challenged === true;
 
@@ -110,6 +128,8 @@ export interface CatalogPage {
   data: ShopifyProductsResponse | null;
   /** Answered 2xx with a web page instead of JSON — a bot check, not a verdict on the store. */
   challenged?: boolean;
+  /** Served by Shopify (direct reads only). */
+  fromShopify?: boolean;
 }
 
 /** How a catalogue page is fetched: directly, or relayed through Firecrawl. */
@@ -146,11 +166,12 @@ const directPage: PageFetcher = async (base, page, budget, deadlineAt) => {
     }
   }
   const retry = retryAfterMs(res);
+  const fromShopify = servedByShopify(res.headers);
   if (!res.ok) {
     await res.body?.cancel().catch(() => {});
-    return { status: res.status, retryAfterMs: retry, data: null };
+    return { status: res.status, retryAfterMs: retry, data: null, fromShopify };
   }
-  return { status: res.status, retryAfterMs: retry, data: parseCatalog(await res.text()) };
+  return { status: res.status, retryAfterMs: retry, data: parseCatalog(await res.text()), fromShopify };
 };
 
 /**
@@ -282,6 +303,61 @@ export async function scrapeShopifyCatalog(domain: string, deadlineAt?: number):
   return readShopifyCatalog(host, directPage, [host, `www.${host}`], deadlineAt);
 }
 
+// The add-store check must answer while the user waits.
+const PROBE_BUDGET_MS = 10_000;
+const RELAY_PROBE_MS = 20_000;
+
+/** Settle a refused, non-Shopify site with one relayed request. Never throws. */
+async function relayProbe(host: string): Promise<CatalogProbe> {
+  if (!firecrawlEnabled() || process.env.SHOPIFY_RELAY === 'off') return { kind: 'unknown' };
+  try {
+    const page = await relayPage(host, 1, RELAY_PROBE_MS);
+    if (page.data) return { kind: 'catalogue' };
+    if (page.challenged || isBlockStatus(page.status) || page.status >= 500 || page.status === 0) return { kind: 'unknown' };
+    return { kind: 'none', reason: httpReason(page.status === 200 ? 404 : page.status) };
+  } catch {
+    return { kind: 'unknown' };
+  }
+}
+
+/** What can be known about a store's catalogue in one quick look. */
+export type CatalogProbe =
+  | { kind: 'catalogue' } // it has one: queue the store
+  | { kind: 'none'; reason: string } // reachable, but no catalogue file: needs a manual read
+  | { kind: 'unknown' }; // refused, paused, slow or unreachable: queue it and let the run decide
+
+/**
+ * One quick look at the store's /products.json (bare domain, then www.) so
+ * the add-store form can say at once when a store can't be read
+ * automatically — instead of queueing it and answering a run later.
+ * Only a clear "reachable, no catalogue" is final; anything uncertain is
+ * 'unknown' and the store is queued as usual. Skipped while Shopify is
+ * pausing us (we don't know yet whether the store is on Shopify).
+ */
+export async function probeCatalog(domain: string): Promise<CatalogProbe> {
+  const host = normalizeDomain(domain);
+  if (host === INJECTION_DEMO_DOMAIN) return { kind: 'catalogue' };
+  if ((await shopifyCooldownMs()) > 0) return { kind: 'unknown' };
+  try {
+    await openCatalog(host, directPage, [host, `www.${host}`], Date.now() + PROBE_BUDGET_MS);
+    return { kind: 'catalogue' };
+  } catch (err) {
+    if (err instanceof StoreBlockedError) {
+      if (err.fromShopify) {
+        // A Shopify store, just limiting us: it has a catalogue — queue it.
+        if (err.status === 429) await startShopifyCooldown(err.retryAfterMs);
+        return { kind: 'catalogue' };
+      }
+      // The site's own bot protection hides whether a catalogue exists: one
+      // relayed request (1 credit) settles it while the user waits.
+      return relayProbe(host);
+    }
+    const msg = err instanceof Error ? err.message : '';
+    if (!(err instanceof StoreUnreachableError) && /^not a Shopify catalogue/.test(msg)) return { kind: 'none', reason: msg };
+    return { kind: 'unknown' };
+  }
+}
+
 /**
  * How a store was read, kept on the snapshot and the brief:
  * - shopify:        its own catalogue, read directly
@@ -353,7 +429,9 @@ export async function scrapeCatalog(
       err = e;
     }
   }
-  if (err instanceof StoreBlockedError && err.status === 429 && cooldown === 0) await startShopifyCooldown(err.retryAfterMs);
+  // Pause all Shopify reads only when Shopify itself said 429 — a site's own
+  // bot protection says nothing about Shopify's per-IP limit.
+  if (err instanceof StoreBlockedError && err.status === 429 && err.fromShopify && cooldown === 0) await startShopifyCooldown(err.retryAfterMs);
 
   // A site that can't be reached at all won't be reachable for Firecrawl either.
   if (err instanceof StoreUnreachableError || !firecrawlEnabled()) throw err;
@@ -389,9 +467,7 @@ export async function scrapeCatalog(
   const why = err instanceof Error ? err.message : String(err);
   if (!aiReadEnabled()) {
     if (blocked) throw blocked;
-    const reason = /^not a Shopify catalogue|catalogue is empty/.test(why)
-      ? "it doesn't publish a product catalogue we can read (it isn't a standard Shopify store)"
-      : `its product catalogue couldn't be read (${why})`;
+    const reason = /^not a Shopify catalogue|catalogue is empty/.test(why) ? NO_CATALOGUE_REASON : `its product catalogue couldn't be read (${why})`;
     console.warn(`[scrape] ${host}: no catalogue (${why}) — AI reading is off, manual read needed`);
     throw new ManualReadNeededError(manualReadMessage(host, reason));
   }
