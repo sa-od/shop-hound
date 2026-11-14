@@ -49,6 +49,12 @@ export function CatalogSnapshot({ catalog: c, partial = false, complete }: { cat
           </div>
         ))}
       </dl>
+      {!!c.addOnsExcluded && (
+        <p className="mt-2 text-xs text-ink-3">
+          {c.addOnsExcluded === 1 ? "1 checkout add-on" : `${c.addOnsExcluded} checkout add-ons`} (like shipping protection or gift cards) not
+          counted.
+        </p>
+      )}
 
       <div className="mt-5 grid gap-x-10 gap-y-5 sm:grid-cols-2">
         {c.productTypes.length > 0 && <Bars title="Product types" items={c.productTypes} total={c.productCount} />}

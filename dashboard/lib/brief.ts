@@ -106,8 +106,10 @@ export interface CatalogSummary {
   /** Stock and variants are absent when the read couldn't see them (web-page reads). */
   inStock?: number;
   soldOut?: number;
-  /** Whole percent, as the brief cites it. */
+  /** Percent in stock (one decimal), as the brief cites it. */
   inStockPct?: number;
+  /** Checkout add-ons (shipping protection, returns cover, gift cards…) left out of every figure. */
+  addOnsExcluded?: number;
   productTypes: { name: string; count: number }[];
   vendors: { name: string; count: number }[];
   avgVariants?: number;
