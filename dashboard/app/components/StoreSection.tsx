@@ -1,6 +1,6 @@
 import dynamicImport from "next/dynamic";
 import type { BriefDetail } from "@/lib/api";
-import { diffFor, formatPct, formatPrice, isPartialRead, productCountText, sourceLabel, priceTickets, slug, type MovementRow } from "@/lib/brief";
+import { diffFor, formatPct, formatPrice, isPartialRead, productCountText, sourceLabel, priceTickets, slug, type MovementRow, calendarDay } from "@/lib/brief";
 import { CatalogSnapshot } from "./CatalogSnapshot";
 import { LastRead } from "./LastRead";
 import { LocalTime } from "./LocalTime";
@@ -40,6 +40,7 @@ export function StoreSection({
   retryOn = null,
   contactEmail = null,
   productDelta,
+  deltaSince,
 }: {
   brief: BriefDetail;
   row: MovementRow;
@@ -50,6 +51,8 @@ export function StoreSection({
   contactEmail?: string | null;
   /** This run's change in product count, from the run history. */
   productDelta?: number;
+  /** The date (YYYY-MM-DD) of the read that productDelta is measured against. */
+  deltaSince?: string;
 }) {
   const d = diffFor(brief, row.competitor);
   const tickets = priceTickets(brief).filter((t) => t.competitor === row.competitor);
@@ -137,13 +140,12 @@ export function StoreSection({
                     partial={isPartialRead(row.source)}
                     complete={row.complete}
                     delta={productDelta}
+                    deltaSince={deltaSince}
                   />
-                  <h4 className="mt-7 font-cond text-lg font-bold">
-                    Changes since the last check
-                  </h4>
+                  <h4 className="mt-7 font-cond text-lg font-bold">Changes since {calendarDay(d.previousSnapshotDate)}</h4>
                 </>
               )}
-              {row.total === 0 && <p className="mt-3 text-sm text-ink-2">No changes since the last check.</p>}
+              {row.total === 0 && <p className="mt-3 text-sm text-ink-2">No changes since {calendarDay(d.previousSnapshotDate)}.</p>}
 
               {tickets.length > 0 && (
                 <Block title="Price changes" count={tickets.length}>

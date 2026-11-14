@@ -229,3 +229,10 @@ export function manualReadWhy(reason: string | undefined) {
 export function productCountText(n: number, complete?: boolean) {
   return `${complete === false ? 'at least ' : ''}${n.toLocaleString()}`;
 }
+
+/** A calendar date (YYYY-MM-DD) as "Nov 13", never shifted by a time zone. Undefined input gives "the last check". */
+export function calendarDay(d: string | undefined | null): string {
+  if (!d) return "the last check";
+  const t = new Date(/^\d{4}-\d{2}-\d{2}$/.test(d) ? `${d}T00:00:00Z` : d);
+  return Number.isNaN(t.getTime()) ? d : t.toLocaleString("en-US", { month: "short", day: "numeric", timeZone: "UTC" });
+}

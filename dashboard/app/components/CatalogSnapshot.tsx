@@ -1,4 +1,4 @@
-import { formatMoney, type CatalogSummary } from "@/lib/brief";
+import { formatMoney, type CatalogSummary, calendarDay } from "@/lib/brief";
 import { ChangeRow } from "./shelf";
 
 /**
@@ -6,17 +6,19 @@ import { ChangeRow } from "./shelf";
  * there is anything to compare. Every figure comes from the snapshot.
  */
 /** `partial`: read from web pages, where stock and variants aren't known (they read as defaults), so they're left out. */
-/** `delta`: change in product count since the last check (verified runs). */
+/** `delta`: change in product count since the compared read on `deltaSince` (YYYY-MM-DD). */
 export function CatalogSnapshot({
   catalog: c,
   partial = false,
   complete,
   delta,
+  deltaSince,
 }: {
   catalog: CatalogSummary;
   partial?: boolean;
   complete?: boolean;
   delta?: number;
+  deltaSince?: string;
 }) {
   const m = (n: number) => formatMoney(n, c.currency);
   const whole = (n: number) => m(n).replace(/\.00$/, "");
@@ -33,8 +35,8 @@ export function CatalogSnapshot({
           ? "At least this many: the read ran out of time"
           : delta !== undefined
             ? delta === 0
-              ? "Same as the last check"
-              : `${delta > 0 ? "+" : "−"}${Math.abs(delta).toLocaleString()} since the last check`
+              ? `Same as ${deltaSince ? "on " : ""}${calendarDay(deltaSince)}`
+              : `${delta > 0 ? "+" : "−"}${Math.abs(delta).toLocaleString()} since ${calendarDay(deltaSince)}`
             : c.avgVariants && !partial
             ? `${c.avgVariants.toFixed(1)} variants each on average`
             : null,

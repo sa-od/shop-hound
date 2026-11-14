@@ -1,16 +1,18 @@
 import Link from "next/link";
 import type { RunSummary } from "@/lib/api";
-import { productCountText } from "@/lib/brief";
+import { calendarDay, productCountText } from "@/lib/brief";
 import { AuditTag } from "./shelf";
 import { LocalTime } from "./LocalTime";
 
 /** "+2" / "−3" after a product count; nothing when unchanged or unknown. */
-export function Delta({ d }: { d?: number | null }) {
+export function Delta({ d, since }: { d?: number | null; since?: string }) {
   if (d === undefined || d === null || d === 0) return null;
+  const label = `since ${calendarDay(since)}`;
   return (
-    <span className={`ml-1.5 text-xs ${d < 0 ? "text-cut" : "text-ok"}`}>
+    <span title={label} className={`ml-1.5 text-xs ${d < 0 ? "text-cut" : "text-ok"}`}>
       {d > 0 ? "+" : "−"}
       {Math.abs(d).toLocaleString()}
+      <span className="sr-only"> {label}</span>
     </span>
   );
 }
@@ -108,7 +110,7 @@ export function RunsTable({ runs, currentId }: { runs: RunSummary[]; currentId?:
                 <td className="whitespace-nowrap px-4 py-2.5 text-ink-2">{runReason(r)}</td>
                 <td className="whitespace-nowrap px-4 py-2.5 text-right tabular-nums">
                   {productCountText(r.productCount, r.complete)}
-                  <Delta d={r.productDelta} />
+                  <Delta d={r.productDelta} since={r.deltaSince} />
                 </td>
                 {r.status === "first_snapshot" ? (
                   <td colSpan={FIGURES.length} className="px-4 py-2.5 text-right text-[13px] text-ink-3">

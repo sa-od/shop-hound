@@ -45,7 +45,7 @@ function Products({ s }: { s: StoreSummary }) {
   return (
     <>
       {productCountText(s.productCount, s.complete)}
-      <Delta d={s.productDelta} />
+      <Delta d={s.productDelta} since={s.deltaSince} />
     </>
   );
 }
