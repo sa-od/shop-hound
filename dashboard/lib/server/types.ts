@@ -23,6 +23,8 @@ export const competitorSnapshotSchema = z.object({
   snapshotDate: z.string(), // ISO date (YYYY-MM-DD)
   products: z.array(normalizedProductSchema),
   source: z.enum(['shopify', 'shopify_relay', 'firecrawl']).optional(), // ingestion path (default shopify)
+  // false = time ran out before the catalogue's last page; never compared.
+  complete: z.boolean().optional(),
 });
 export type CompetitorSnapshot = z.infer<typeof competitorSnapshotSchema>;
 
@@ -86,6 +88,9 @@ export const competitorDiffSchema = z.object({
   competitor: z.string(),
   status: z.enum(['verified', 'unverified', 'first_snapshot']),
   source: z.enum(['shopify', 'shopify_relay', 'firecrawl']).optional(), // ingestion path (default shopify)
+  // false = time ran out before the catalogue's last page: productCount is a
+  // lower bound, and nothing was compared.
+  complete: z.boolean().optional(),
   previousSnapshotDate: z.string().nullable(),
   currentSnapshotDate: z.string(),
   productCount: z.number(),

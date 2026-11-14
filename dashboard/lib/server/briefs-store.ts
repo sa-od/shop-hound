@@ -9,6 +9,8 @@ export interface CompetitorSummary {
   status: string;
   /** shopify: own catalogue, direct · shopify_relay: own catalogue via Firecrawl · firecrawl: AI-read pages (partial) */
   source?: 'shopify' | 'shopify_relay' | 'firecrawl';
+  /** false = time ran out before the catalogue's last page: productCount is a lower bound. */
+  complete?: boolean;
   productCount: number;
   newSkus: number;
   priceChanges: number;

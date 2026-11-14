@@ -1,7 +1,7 @@
 import { type CompetitorSnapshot, type CompetitorDiff, type StructuredDiff, type GuardrailVerdict } from './types';
 import { scrapeCatalog, normalizeDomain, msUntil, StoreBlockedError } from './scraper';
-import { embedProducts } from './embeddings';
-import { saveSnapshot, getPreviousSnapshot, getLatestSnapshotInfo, isFullCatalog } from './snapshot-store';
+import { embedProducts, productToEmbeddingText } from './embeddings';
+import { saveSnapshot, getPreviousSnapshot, getLatestSnapshotInfo, isFullCatalog, loadReusableVectors, embeddingTextKey } from './snapshot-store';
 import { summarizeCatalog } from './catalog';
 import { diffSnapshots, verifyDiffAgainstPayload } from './diff-engine';
 import { groundingCheck, safetyAudit, maskCompetitorDomains } from './enkrypt';
@@ -62,6 +62,41 @@ const RESERVE_MS = 90_000;
 // Don't start a store with less than this left over the reserve.
 const MIN_SCRAPE_MS = 20_000;
 const SCRAPE_CONCURRENCY = 3;
+// Embedding stops this long before the deadline, leaving the diff, grounding,
+// the model and the audit their time. Products left unembedded only lose the
+// optional "closest existing product" context.
+const AFTER_EMBED_MS = 60_000;
+const EMBED_CHUNK = 1_024;
+
+/**
+ * Vectors for a snapshot's products: reused from the store's last embedded
+ * snapshot when a product's embedding text is unchanged, otherwise embedded
+ * now — products new to the store first (their vectors are the ones a diff
+ * looks up), and only while time allows; the rest stay null.
+ */
+async function vectorsFor(snapshot: CompetitorSnapshot, embedUntil: number | undefined): Promise<{ vectors: (number[] | null)[]; textKeys: string[]; reused: number; skipped: number }> {
+  const texts = snapshot.products.map(productToEmbeddingText);
+  const textKeys = texts.map(embeddingTextKey);
+  const reusable = await loadReusableVectors(snapshot.competitor).catch(() => new Map<string, { textKey: string; vector: number[] }>());
+  const vectors: (number[] | null)[] = snapshot.products.map((p, i) => {
+    const r = reusable.get(p.productId);
+    return r && r.textKey === textKeys[i] ? r.vector : null;
+  });
+  const reused = vectors.filter(Boolean).length;
+  const todo = snapshot.products
+    .map((p, i) => ({ i, isNew: !reusable.has(p.productId) }))
+    .filter(({ i }) => !vectors[i])
+    .sort((a, b) => Number(b.isNew) - Number(a.isNew))
+    .map(({ i }) => i);
+  let done = 0;
+  while (done < todo.length && msUntil(embedUntil) > 0) {
+    const chunk = todo.slice(done, done + EMBED_CHUNK);
+    const embedded = await embedProducts(chunk.map(i => snapshot.products[i]));
+    chunk.forEach((i, k) => (vectors[i] = embedded[k]));
+    done += chunk.length;
+  }
+  return { vectors, textKeys, reused, skipped: todo.length - done };
+}
 
 export async function runAnalysis(opts: RunOptions): Promise<RunResult> {
   const log = opts.log ?? ((m: string) => console.log(m));
@@ -93,9 +128,9 @@ export async function runAnalysis(opts: RunOptions): Promise<RunResult> {
         continue;
       }
       try {
-        const { products, source } = await scrapeCatalog(competitor, scrapeDeadline, { fallbackOnBlock: !opts.retryBlocked });
-        snapshots.push({ competitor, snapshotDate, products, source });
-        log(`[scrape] ${competitor}: ${products.length} products via ${source}`);
+        const { products, source, complete } = await scrapeCatalog(competitor, scrapeDeadline, { fallbackOnBlock: !opts.retryBlocked });
+        snapshots.push({ competitor, snapshotDate, products, source, ...(complete === false ? { complete: false } : {}) });
+        log(`[scrape] ${competitor}: ${products.length} products via ${source}${complete === false ? ' — INCOMPLETE (time ran out), will not be compared' : ''}`);
       } catch (err) {
         unverified.push(competitor);
         unverifiedReasons[competitor] = String(err instanceof Error ? err.message : err).slice(0, 300);
@@ -119,20 +154,25 @@ export async function runAnalysis(opts: RunOptions): Promise<RunResult> {
   // Previous snapshots are read BEFORE today's is written, so a re-run on the
   // same day still diffs against last week, never against itself.
   let vectorsUpserted = 0;
+  const embedUntil = deadlineAt === undefined ? undefined : deadlineAt - AFTER_EMBED_MS;
   const vectorsByCompetitor = new Map<string, Map<string, number[]>>();
   const previousByCompetitor = new Map<string, CompetitorSnapshot | null>();
   for (const snapshot of snapshots) {
-    // An AI read is never diffed (it is partial): it records a baseline only.
+    // A partial read (AI-read, or time ran out) is never diffed: baseline only.
     previousByCompetitor.set(
       snapshot.competitor,
-      isFullCatalog(snapshot.source) ? await getPreviousSnapshot(snapshot.competitor, snapshot.snapshotDate) : null,
+      isFullCatalog(snapshot.source, snapshot.complete) ? await getPreviousSnapshot(snapshot.competitor, snapshot.snapshotDate) : null,
     );
-    const vectors = await embedProducts(snapshot.products);
-    await saveSnapshot(snapshot, vectors);
-    vectorsByCompetitor.set(snapshot.competitor, new Map(snapshot.products.map((p, i) => [p.productId, vectors[i]])));
-    vectorsUpserted += vectors.length;
+    const { vectors, textKeys, reused, skipped } = await vectorsFor(snapshot, embedUntil);
+    await saveSnapshot(snapshot, vectors, textKeys);
+    vectorsByCompetitor.set(
+      snapshot.competitor,
+      new Map(snapshot.products.flatMap((p, i): [string, number[]][] => (vectors[i] ? [[p.productId, vectors[i]!]] : []))),
+    );
+    const saved = vectors.filter(Boolean).length;
+    vectorsUpserted += saved;
+    log(`[embed] ${snapshot.competitor}: ${saved} vectors (${reused} reused${skipped ? `, ${skipped} skipped — out of time` : ''})`);
   }
-  log(`[embed] ${vectorsUpserted} product vectors saved`);
 
   // ── 3. Deterministic diff ──
   const diffs: CompetitorDiff[] = [];
@@ -141,7 +181,7 @@ export async function runAnalysis(opts: RunOptions): Promise<RunResult> {
     const previous = previousByCompetitor.get(snapshot.competitor) ?? null;
     const diff = await diffSnapshots(snapshot, previous, vectorsByCompetitor.get(snapshot.competitor) ?? new Map());
     groundingErrors.push(...verifyDiffAgainstPayload(diff, snapshot, previous));
-    diffs.push({ ...diff, source: snapshot.source ?? 'shopify', catalog: summarizeCatalog(snapshot.products, { stockAndVariantsKnown: snapshot.source !== 'firecrawl' }) });
+    diffs.push({ ...diff, source: snapshot.source ?? 'shopify', ...(snapshot.complete === false ? { complete: false } : {}), catalog: summarizeCatalog(snapshot.products, { stockAndVariantsKnown: snapshot.source !== 'firecrawl' }) });
   }
   for (const competitor of unverified) {
     // Today's failed read saved nothing, so the latest snapshot is an earlier check.
@@ -276,6 +316,7 @@ export async function runAnalysis(opts: RunOptions): Promise<RunResult> {
       competitor: c.competitor,
       status: c.status,
       source: c.source ?? 'shopify',
+      ...(c.complete === false ? { complete: false } : {}),
       productCount: c.productCount,
       newSkus: c.newSkus.length,
       priceChanges: c.priceChanges.length,
@@ -307,8 +348,11 @@ export function dataConfidenceSection(diff: StructuredDiff): string {
   const byStatus = (status: CompetitorDiff['status']) => diff.diffs.filter(d => d.status === status);
   const line = (label: string, items: string[]) => `- **${label}:** ${items.length > 0 ? items.join(', ') : 'none'}`;
   const verified = byStatus('verified').map(d => `${d.competitor} (vs ${d.previousSnapshotDate})`);
-  const baseline = byStatus('first_snapshot').filter(d => d.source !== 'firecrawl').map(d => d.competitor);
-  const partial = byStatus('first_snapshot').filter(d => d.source === 'firecrawl').map(d => d.competitor);
+  const isPartial = (d: CompetitorDiff) => d.source === 'firecrawl' || d.complete === false;
+  const baseline = byStatus('first_snapshot').filter(d => !isPartial(d)).map(d => d.competitor);
+  const partial = byStatus('first_snapshot')
+    .filter(isPartial)
+    .map(d => (d.complete === false ? `${d.competitor} — time ran out after ${d.productCount} products` : d.competitor));
   const unverified = byStatus('unverified').map(d => {
     const reason = diff.unverifiedReasons?.[d.competitor];
     return reason ? `${d.competitor} — ${reason}` : d.competitor;
@@ -317,7 +361,7 @@ export function dataConfidenceSection(diff: StructuredDiff): string {
     '## Data Confidence',
     line('Verified (week-over-week diff)', verified),
     line('Baseline only (first snapshot this week)', baseline),
-    ...(partial.length > 0 ? [line('Partial read from web pages (not compared week over week)', partial)] : []),
+    ...(partial.length > 0 ? [line('Partial read (not compared week over week)', partial)] : []),
     line('Unverified this week (no claims made)', unverified),
   ].join('\n');
 }

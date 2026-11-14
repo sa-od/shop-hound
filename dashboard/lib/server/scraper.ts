@@ -10,9 +10,10 @@ import { shopifyCooldownMs, startShopifyCooldown } from './throttle';
  * endpoint disabled, bot protection — Firecrawl AI extraction takes over.
  */
 
-const PAGE_LIMIT = 250;
-const MAX_PAGES = 5; // cap: up to 1250 products per competitor (~1 min embed)
-const PAGE_TIMEOUT_MS = 15_000; // 15s per page — total scrape ≤75s for 5 pages
+const PAGE_LIMIT = 250; // Shopify's maximum per page
+// No page cap: the whole catalogue is read. Only the run's time budget can
+// stop a read early, and then it is marked incomplete (see readShopifyCatalog).
+const PAGE_TIMEOUT_MS = 15_000; // per page
 
 interface ShopifyProductsResponse {
   products: Array<{
@@ -227,27 +228,48 @@ function toProducts(host: string, data: ShopifyProductsResponse): NormalizedProd
   return products;
 }
 
-/** Read a Shopify store's whole catalogue (up to MAX_PAGES pages) with the given fetcher. */
-export async function readShopifyCatalog(host: string, fetchPage: PageFetcher, bases: string[], deadlineAt?: number): Promise<NormalizedProduct[]> {
+/** A catalogue read. `complete: false` = time ran out before the last page. */
+export interface CatalogRead {
+  products: NormalizedProduct[];
+  complete: boolean;
+}
+
+/**
+ * Read a Shopify store's whole catalogue, page by page, until a short page
+ * marks the end. No page cap. If the run's time runs out first, the pages read
+ * so far are returned with `complete: false` — such a read must never be
+ * compared with another (every unread product would look "removed").
+ */
+export async function readShopifyCatalog(host: string, fetchPage: PageFetcher, bases: string[], deadlineAt?: number): Promise<CatalogRead> {
   const { base, first } = await openCatalog(host, fetchPage, bases, deadlineAt);
-  const products = toProducts(host, first);
+  // Keyed by product id: if the store changes mid-read, pages can shift and
+  // repeat a product.
+  const byId = new Map<string, NormalizedProduct>();
+  const add = (data: ShopifyProductsResponse) => {
+    const before = byId.size;
+    for (const p of toProducts(host, data)) byId.set(p.productId, p);
+    return byId.size - before;
+  };
+  add(first);
   let last = first;
-  for (let page = 2; page <= MAX_PAGES && last.products.length >= PAGE_LIMIT; page++) {
+  for (let page = 2; last.products.length >= PAGE_LIMIT; page++) {
     await new Promise(r => setTimeout(r, PAGE_GAP_MS));
     const budget = Math.min(PAGE_TIMEOUT_MS, msUntil(deadlineAt));
-    if (budget <= 1_000) break; // keep the pages we have
+    if (budget <= 1_000) return { products: [...byId.values()], complete: false };
     const res = await fetchPage(base, page, budget, deadlineAt).catch(err => {
       throw new Error(`catalogue page ${page} failed — ${describeFetchError(err)}`);
     });
     if (isRefused(res)) throw blockedError(res);
     if (!res.data) throw new Error(`catalogue page ${page} failed — ${httpReason(res.status)}`);
-    products.push(...toProducts(host, res.data));
+    // A full page with nothing new means the store is repeating itself
+    // (some ignore `page` past the end) — that is the end, not a loop.
+    if (add(res.data) === 0) break;
     last = res.data;
   }
-  return products;
+  return { products: [...byId.values()], complete: true };
 }
 
-export async function scrapeShopifyCatalog(domain: string, deadlineAt?: number): Promise<NormalizedProduct[]> {
+export async function scrapeShopifyCatalog(domain: string, deadlineAt?: number): Promise<CatalogRead> {
   const host = normalizeDomain(domain);
   return readShopifyCatalog(host, directPage, [host, `www.${host}`], deadlineAt);
 }
@@ -297,15 +319,16 @@ export async function scrapeCatalog(
   domain: string,
   deadlineAt?: number,
   opts: { fallbackOnBlock?: boolean } = {},
-): Promise<{ products: NormalizedProduct[]; source: CatalogSource }> {
+): Promise<{ products: NormalizedProduct[]; source: CatalogSource; complete?: boolean }> {
   const host = normalizeDomain(domain);
   if (host === INJECTION_DEMO_DOMAIN) {
     // Deterministic guardrail-demo catalog (see fixture above)
-    return { products: INJECTION_DEMO_CATALOG, source: 'shopify' };
+    return { products: INJECTION_DEMO_CATALOG, source: 'shopify', complete: true };
   }
-  const nonEmpty = (products: NormalizedProduct[]) => {
-    if (products.length === 0) throw new Error('the Shopify catalogue is empty');
-    return products;
+  const nonEmpty = (read: CatalogRead) => {
+    if (read.products.length === 0) throw new Error('the Shopify catalogue is empty');
+    if (!read.complete) console.warn(`[scrape] ${host}: time ran out — read ${read.products.length} products, catalogue incomplete`);
+    return read;
   };
 
   // 1. The store's own catalogue, read directly — free and exact. Skipped
@@ -317,7 +340,7 @@ export async function scrapeCatalog(
     err = new StoreBlockedError('the store is limiting automated requests right now', cooldown, 429);
   } else {
     try {
-      return { products: nonEmpty(await scrapeShopifyCatalog(host, deadlineAt)), source: 'shopify' };
+      return { ...nonEmpty(await scrapeShopifyCatalog(host, deadlineAt)), source: 'shopify' };
     } catch (e) {
       err = e;
     }
@@ -333,9 +356,9 @@ export async function scrapeCatalog(
   //    disables it (blocked stores then wait and retry instead).
   if (err instanceof StoreBlockedError && process.env.SHOPIFY_RELAY !== 'off') {
     try {
-      const products = nonEmpty(await readShopifyCatalog(host, relayPage, [host], deadlineAt));
+      const read = nonEmpty(await readShopifyCatalog(host, relayPage, [host], deadlineAt));
       console.log(`[scrape] ${host}: read via Firecrawl relay (direct: ${err.message})`);
-      return { products, source: 'shopify_relay' };
+      return { ...read, source: 'shopify_relay' };
     } catch (relayErr) {
       console.warn(`[scrape] ${host}: relay failed: ${relayErr instanceof Error ? relayErr.message : relayErr}`);
       // Still refused, or Firecrawl itself failed: stays a (temporary) block.

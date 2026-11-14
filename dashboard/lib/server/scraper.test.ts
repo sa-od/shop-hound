@@ -23,14 +23,15 @@ const store = (pages: Record<string, CatalogPage | Error>): PageFetcher & { call
 
 test('reads every page until a short one', async () => {
   const f = store({ 'a.com#1': catalog(1, 250), 'a.com#2': catalog(251, 10) });
-  const products = await readShopifyCatalog('a.com', f, ['a.com']);
+  const { products, complete } = await readShopifyCatalog('a.com', f, ['a.com']);
   assert.equal(products.length, 260);
+  assert.equal(complete, true);
   assert.deepEqual(f.calls, ['a.com#1', 'a.com#2']);
 });
 
 test('falls back to www. when the bare domain has no catalogue', async () => {
   const f = store({ 'www.a.com#1': catalog(1, 3) });
-  const products = await readShopifyCatalog('a.com', f, ['a.com', 'www.a.com']);
+  const { products } = await readShopifyCatalog('a.com', f, ['a.com', 'www.a.com']);
   assert.equal(products.length, 3);
 });
 
@@ -92,4 +93,28 @@ test('relay: an HTML page instead of JSON is a bot check', () => {
 test('relay: JSON that is not a catalogue, and a 404, are "no catalogue" (not a bot check)', () => {
   assert.deepEqual(parseRelayPage(200, '{"error":"nope"}'), { status: 200, retryAfterMs: null, data: null });
   assert.deepEqual(parseRelayPage(404, '<html>Not found</html>'), { status: 404, retryAfterMs: null, data: null });
+});
+
+test('no page cap: a 2,600-product catalogue is read to the end', async () => {
+  const pages: Record<string, CatalogPage> = {};
+  for (let i = 0; i < 10; i++) pages[`a.com#${i + 1}`] = catalog(i * 250 + 1, 250);
+  pages['a.com#11'] = catalog(2501, 100);
+  const { products, complete } = await readShopifyCatalog('a.com', store(pages), ['a.com']);
+  assert.equal(products.length, 2600);
+  assert.equal(complete, true);
+});
+
+test('time running out mid-catalogue returns what was read, marked incomplete', async () => {
+  const pages: Record<string, CatalogPage> = { 'a.com#1': catalog(1, 250), 'a.com#2': catalog(251, 250), 'a.com#3': catalog(501, 250) };
+  const deadline = Date.now() + 1_600; // room for ~1 page gap, not the rest
+  const { products, complete } = await readShopifyCatalog('a.com', store(pages), ['a.com'], deadline);
+  assert.equal(complete, false);
+  assert.ok(products.length >= 250 && products.length < 750);
+});
+
+test('a store that repeats its last page forever ends the read instead of looping', async () => {
+  const f = (async () => catalog(1, 250)) as unknown as PageFetcher;
+  const { products, complete } = await readShopifyCatalog('a.com', f, ['a.com']);
+  assert.equal(products.length, 250);
+  assert.equal(complete, true);
 });

@@ -23,7 +23,7 @@ const POLL_INTERVAL_MS = 3_000;
 // finished by then are kept (a partial read beats none); measured large
 // stores took longer than the old 60s cap for 15 pages.
 const POLL_TIMEOUT_MS = 120_000;
-const MAX_PRODUCTS = 2500; // same ceiling as the Shopify scraper
+const MAX_PRODUCTS = 2500; // AI reads are page-budgeted anyway; this only bounds a runaway page
 // Page budget caps credit burn (json extraction costs credits per page).
 // Override with FIRECRAWL_PAGE_BUDGET for deeper coverage on paid plans.
 const DEFAULT_PAGE_BUDGET = 10;

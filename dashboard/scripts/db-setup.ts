@@ -4,7 +4,7 @@
  *
  *   npx tsx --env-file=.env.local scripts/db-setup.ts
  */
-import { db, closeDb, SNAPSHOTS, PRODUCT_VECTORS, BRIEFS, RUNS, PRODUCT_VECTOR_INDEX } from '../lib/server/db';
+import { db, closeDb, SNAPSHOTS, SNAPSHOT_PARTS, PRODUCT_VECTORS, BRIEFS, RUNS, PRODUCT_VECTOR_INDEX } from '../lib/server/db';
 import { EMBEDDING_DIMENSIONS } from '../lib/server/openai';
 
 async function ensureCollection(name: string) {
@@ -16,10 +16,12 @@ async function ensureCollection(name: string) {
 }
 
 async function main() {
-  for (const name of [SNAPSHOTS, PRODUCT_VECTORS, BRIEFS, RUNS]) await ensureCollection(name);
+  for (const name of [SNAPSHOTS, SNAPSHOT_PARTS, PRODUCT_VECTORS, BRIEFS, RUNS]) await ensureCollection(name);
 
   // Diff baseline lookup: latest snapshot for a competitor before a date.
   await db().collection(SNAPSHOTS).createIndex({ competitor: 1, snapshotDate: -1 });
+  // A big snapshot's product parts, read back in order.
+  await db().collection(SNAPSHOT_PARTS).createIndex({ snapshotId: 1, part: 1 });
   // Retention sweep + distinct dates per competitor.
   await db().collection(PRODUCT_VECTORS).createIndex({ competitor: 1, snapshotDate: 1 });
   // One brief per (week, competitor set) — re-runs overwrite.

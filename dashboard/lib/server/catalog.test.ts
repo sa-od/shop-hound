@@ -56,4 +56,6 @@ test('only full catalogues are compared week over week', async () => {
   assert.equal(isFullCatalog('shopify_relay'), true);
   assert.equal(isFullCatalog(undefined), true); // snapshots from before sources were recorded
   assert.equal(isFullCatalog('firecrawl'), false);
+  assert.equal(isFullCatalog('shopify', false), false); // time ran out mid-read
+  assert.equal(isFullCatalog('shopify', true), true);
 });

@@ -8,6 +8,8 @@ import { attachDatabasePool } from '@vercel/functions';
  */
 
 export const SNAPSHOTS = 'snapshots';
+/** A big snapshot's products, split across documents (MongoDB caps one at 16MB). */
+export const SNAPSHOT_PARTS = 'snapshot_parts';
 export const PRODUCT_VECTORS = 'product_vectors';
 export const BRIEFS = 'briefs';
 export const RUNS = 'runs';
