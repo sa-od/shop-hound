@@ -3,7 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { ArrowDown, ArrowUpDown } from "lucide-react";
-import { catalogLine, formatPct, lastKnownLine, slug, type MovementRow } from "@/lib/brief";
+import { catalogLine, formatPct, isPartialRead, lastKnownLine, slug, sourceLabel, type MovementRow } from "@/lib/brief";
 import { StatusTag } from "./shelf";
 
 type Key = "total" | "priceChanges" | "biggest" | "newSkus" | "removed" | "titleChanges";
@@ -21,7 +21,7 @@ const hasDiff = (r: MovementRow) => r.status === "verified";
 function subline(r: MovementRow) {
   return r.status === "unverified"
     ? r.reason ?? "Couldn’t be checked this time"
-    : `${r.productCount.toLocaleString()} products · ${r.source === "firecrawl" ? "via Firecrawl" : "Shopify"}`;
+    : `${r.productCount.toLocaleString()} products · ${sourceLabel(r.source)}${isPartialRead(r.source) ? " · partial" : ""}`;
 }
 
 function noDiffText(r: MovementRow) {
@@ -96,7 +96,7 @@ export function MovementsTable({ rows, briefId }: { rows: MovementRow[]; briefId
                       type="button"
                       onClick={() => setSortKey(active ? "total" : c.key)}
                       title={active ? "Back to sorting by size of change" : `Sort by ${c.label.toLowerCase()}`}
-                      className={`group relative rounded py-1 uppercase transition-colors duration-150 hover:text-ink ${active ? "text-ink" : ""}`}
+                      className={`group relative whitespace-nowrap rounded py-1 uppercase transition-colors duration-150 hover:text-ink ${active ? "text-ink" : ""}`}
                     >
                       {c.label}
                       {/* Outside the label's box, so figures align under the header text. */}

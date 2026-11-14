@@ -5,7 +5,7 @@ import { ArrowLeft, ShieldAlert, ShieldCheck } from "lucide-react";
 import type { BriefDetail } from "@/lib/api";
 import { getBrief } from "@/lib/server/briefs-store";
 import { trackingFor } from "@/lib/server/tracking";
-import { movementRows, splitBrief } from "@/lib/brief";
+import { movementRows, readableViolation, splitBrief } from "@/lib/brief";
 import { BriefOverview } from "@/app/components/BriefOverview";
 import { TrackingLine } from "@/app/components/TrackingLine";
 import { Card } from "@/app/components/shelf";
@@ -116,7 +116,7 @@ function AuditPanel({ brief }: { brief: BriefDetail }) {
               </span>
             </dt>
             <dd className="mt-0.5 text-xs text-ink-3">{c.what}</dd>
-            <dd className="mt-1.5 text-[13px] text-ink-2">{c.v.violations[0] ?? c.ok}</dd>
+            <dd className="mt-1.5 text-[13px] text-ink-2">{readableViolation(c.v.violations[0]) ?? c.ok}</dd>
           </div>
         ))}
       </dl>

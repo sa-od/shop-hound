@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { AlertTriangle, ArrowRight } from "lucide-react";
 import type { BriefDetail } from "@/lib/api";
-import { formatMoney, movementRows, priceTickets, splitBrief, type CatalogSummary } from "@/lib/brief";
+import { formatMoney, movementRows, readableViolation, priceTickets, splitBrief, type CatalogSummary } from "@/lib/brief";
 import { formatWeek } from "@/lib/utils";
 import { MovementsTable } from "./MovementsTable";
 import { Card, Rail, Ticket, TrustLine } from "./shelf";
@@ -69,7 +69,7 @@ export function BriefOverview({
             <AlertTriangle size={18} className="mt-0.5 shrink-0" />
             <p>
               <strong className="font-semibold">This brief didn’t pass the Enkrypt audit.</strong>{" "}
-              {brief.grounding.violations[0] ?? brief.safety.violations[0] ?? "Read it with care."}{" "}
+              {readableViolation(brief.grounding.violations[0] ?? brief.safety.violations[0]) ?? "Read it with care."}{" "}
               <Link href={`/briefs/${brief.id}#audit`} className="underline">
                 See the audit
               </Link>

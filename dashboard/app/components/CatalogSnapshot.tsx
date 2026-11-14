@@ -5,7 +5,8 @@ import { ChangeRow } from "./shelf";
  * A store's catalog as read on this check: what a first check can say before
  * there is anything to compare. Every figure comes from the snapshot.
  */
-export function CatalogSnapshot({ catalog: c }: { catalog: CatalogSummary }) {
+/** `partial`: read from web pages, where stock and variants aren't known (they read as defaults), so they're left out. */
+export function CatalogSnapshot({ catalog: c, partial = false }: { catalog: CatalogSummary; partial?: boolean }) {
   const m = (n: number) => formatMoney(n, c.currency);
   const stockPct = c.inStockPct ?? (c.productCount ? Math.round((c.inStock / c.productCount) * 100) : 0);
 
@@ -13,7 +14,7 @@ export function CatalogSnapshot({ catalog: c }: { catalog: CatalogSummary }) {
     {
       label: "Products",
       value: c.productCount.toLocaleString(),
-      note: c.avgVariants ? `${c.avgVariants.toFixed(1)} variants each on average` : null,
+      note: c.avgVariants && !partial ? `${c.avgVariants.toFixed(1)} variants each on average` : null,
     },
     { label: "Price range", value: `${m(c.price.min)}–${m(c.price.max)}`, note: "Each product at its lowest variant price" },
     { label: "Median price", value: m(c.price.median), note: null },
@@ -23,13 +24,15 @@ export function CatalogSnapshot({ catalog: c }: { catalog: CatalogSummary }) {
       note: `${c.inStock.toLocaleString()} in stock · ${c.soldOut.toLocaleString()} sold out`,
     },
   ];
+  if (partial) stats.pop(); // "In stock" is last
   const brands = c.vendors.length > 1 ? c.vendors : [];
 
   return (
     <div className="mt-4 max-w-[880px]">
-      <dl className="grid grid-cols-2 gap-px overflow-hidden rounded-lg border border-edge bg-edge sm:grid-cols-4">
-        {stats.map((s) => (
-          <div key={s.label} className="bg-shelf px-4 py-3">
+      <dl className={`grid grid-cols-2 gap-px overflow-hidden rounded-lg border border-edge bg-edge ${partial ? "sm:grid-cols-3" : "sm:grid-cols-4"}`}>
+        {stats.map((s, i) => (
+          // Three figures on a two-column phone grid: the last spans the row.
+          <div key={s.label} className={`bg-shelf px-4 py-3 ${stats.length % 2 && i === stats.length - 1 ? "col-span-2 sm:col-span-1" : ""}`}>
             <dt className="text-[11px] font-semibold uppercase tracking-[0.04em] text-ink-3">{s.label}</dt>
             <dd className="mt-1 font-cond text-[22px] font-extrabold sm:text-[26px] leading-none tabular-nums text-ink">{s.value}</dd>
             {s.note && <dd className="mt-1.5 text-xs text-ink-3">{s.note}</dd>}

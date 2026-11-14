@@ -1,6 +1,6 @@
 import dynamicImport from "next/dynamic";
 import type { BriefDetail } from "@/lib/api";
-import { diffFor, formatPct, formatPrice, lastKnownLine, priceTickets, slug, type MovementRow } from "@/lib/brief";
+import { diffFor, formatPct, formatPrice, isPartialRead, lastKnownLine, sourceLabel, priceTickets, slug, type MovementRow } from "@/lib/brief";
 import { CatalogSnapshot } from "./CatalogSnapshot";
 import { Card, ChangeRow, Rail, StatusTag, Ticket } from "./shelf";
 
@@ -53,7 +53,7 @@ export function StoreSection({
           <p className="text-xs text-ink-3">
             {row.status === "unverified"
               ? row.reason ?? "Couldn’t be checked this time"
-              : `${row.productCount.toLocaleString()} products · ${row.source === "firecrawl" ? "read via Firecrawl" : "Shopify"}${
+              : `${row.productCount.toLocaleString()} products · ${sourceLabel(row.source)}${
                   d?.previousSnapshotDate ? ` · compared with ${d.previousSnapshotDate}` : ""
                 }`}
           </p>
@@ -61,13 +61,20 @@ export function StoreSection({
         <StatusTag status={row.status} />
       </div>
 
+      {row.status !== "unverified" && isPartialRead(row.source) && (
+        <p className="mt-3 rounded-md bg-warn-soft px-3 py-2 text-[13px] text-warn">
+          Lower confidence: this store isn’t read from its own catalog, so we read its web pages instead. Some products may be missing and a price
+          may be misread.
+        </p>
+      )}
+
       <div className={notes ? "mt-2 grid gap-x-8 lg:grid-cols-[minmax(0,1fr)_340px]" : "mt-2"}>
         <div className="min-w-0">
           {row.status === "first_snapshot" &&
             (row.catalog ? (
               <>
                 <p className="mt-3 text-sm text-ink-2">First check: here’s their catalog today. Changes show from the next check.</p>
-                <CatalogSnapshot catalog={row.catalog} />
+                <CatalogSnapshot catalog={row.catalog} partial={isPartialRead(row.source)} />
               </>
             ) : (
               <p className="mt-3 text-sm text-ink-2">First check for this store: its catalog is saved as the baseline. Changes show from the next check.</p>

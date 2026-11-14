@@ -194,3 +194,25 @@ export function shortDay(iso: string) {
 export function lastKnownLine(l: LastKnown) {
   return `Last read ${shortDay(l.snapshotDate)}: ${l.productCount.toLocaleString()} products`;
 }
+
+/** How the catalog was read, for the store's detail line. */
+export function sourceLabel(source: string | undefined) {
+  return source === 'firecrawl' ? 'read from its web pages' : source === 'shopify_relay' ? 'Shopify, read via relay' : 'Shopify';
+}
+
+/** Firecrawl reads web pages with AI: the catalog can be partial and a price misread. */
+export const isPartialRead = (source: string | undefined) => source === 'firecrawl';
+
+/**
+ * Audit violations are written for people, except when a check itself failed:
+ * then the text carries the raw service error (status codes, JSON). Say that
+ * plainly instead.
+ */
+export function readableViolation(text: string | undefined): string | undefined {
+  if (!text) return text;
+  if (/[{}]|\bError:|failed: \d{3}/.test(text)) {
+    const check = /grounding/i.test(text) ? 'grounding check' : /safety|bias|policy/i.test(text) ? 'safety check' : 'audit';
+    return `The ${check} couldn’t run this time (Enkrypt returned an error), so this brief isn’t verified.`;
+  }
+  return text;
+}
