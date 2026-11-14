@@ -78,11 +78,22 @@ export async function saveSnapshot(snapshot: CompetitorSnapshot, vectors: number
   await coll.deleteMany({ competitor, snapshotDate: { $nin: keepDates } });
 }
 
-/** Most recent snapshot for a competitor strictly BEFORE the given date. */
+/**
+ * Only full catalogues (the store's own /products.json, read directly or via
+ * the relay) can be compared week over week. An AI read covers a few pages,
+ * so diffing against one invents hundreds of "removed" products and price
+ * changes from misreads — all labelled verified, and all passing grounding.
+ */
+export const isFullCatalog = (source: string | undefined) => source !== 'firecrawl';
+
+/**
+ * Most recent FULL-catalogue snapshot for a competitor strictly BEFORE the
+ * given date (AI reads in between are skipped — see isFullCatalog).
+ */
 export async function getPreviousSnapshot(competitor: string, beforeDate: string): Promise<CompetitorSnapshot | null> {
   const doc = await db()
     .collection<SnapshotDoc>(SNAPSHOTS)
-    .find({ competitor, snapshotDate: { $lt: beforeDate } })
+    .find({ competitor, snapshotDate: { $lt: beforeDate }, source: { $ne: 'firecrawl' } })
     .sort({ snapshotDate: -1 })
     .limit(1)
     .next();

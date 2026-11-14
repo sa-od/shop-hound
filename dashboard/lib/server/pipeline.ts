@@ -1,7 +1,7 @@
 import { type CompetitorSnapshot, type CompetitorDiff, type StructuredDiff, type GuardrailVerdict } from './types';
 import { scrapeCatalog, normalizeDomain, msUntil, StoreBlockedError } from './scraper';
 import { embedProducts } from './embeddings';
-import { saveSnapshot, getPreviousSnapshot, getLatestSnapshotInfo } from './snapshot-store';
+import { saveSnapshot, getPreviousSnapshot, getLatestSnapshotInfo, isFullCatalog } from './snapshot-store';
 import { summarizeCatalog } from './catalog';
 import { diffSnapshots, verifyDiffAgainstPayload } from './diff-engine';
 import { groundingCheck, safetyAudit, maskCompetitorDomains } from './enkrypt';
@@ -122,7 +122,11 @@ export async function runAnalysis(opts: RunOptions): Promise<RunResult> {
   const vectorsByCompetitor = new Map<string, Map<string, number[]>>();
   const previousByCompetitor = new Map<string, CompetitorSnapshot | null>();
   for (const snapshot of snapshots) {
-    previousByCompetitor.set(snapshot.competitor, await getPreviousSnapshot(snapshot.competitor, snapshot.snapshotDate));
+    // An AI read is never diffed (it is partial): it records a baseline only.
+    previousByCompetitor.set(
+      snapshot.competitor,
+      isFullCatalog(snapshot.source) ? await getPreviousSnapshot(snapshot.competitor, snapshot.snapshotDate) : null,
+    );
     const vectors = await embedProducts(snapshot.products);
     await saveSnapshot(snapshot, vectors);
     vectorsByCompetitor.set(snapshot.competitor, new Map(snapshot.products.map((p, i) => [p.productId, vectors[i]])));
@@ -303,7 +307,8 @@ export function dataConfidenceSection(diff: StructuredDiff): string {
   const byStatus = (status: CompetitorDiff['status']) => diff.diffs.filter(d => d.status === status);
   const line = (label: string, items: string[]) => `- **${label}:** ${items.length > 0 ? items.join(', ') : 'none'}`;
   const verified = byStatus('verified').map(d => `${d.competitor} (vs ${d.previousSnapshotDate})`);
-  const baseline = byStatus('first_snapshot').map(d => d.competitor);
+  const baseline = byStatus('first_snapshot').filter(d => d.source !== 'firecrawl').map(d => d.competitor);
+  const partial = byStatus('first_snapshot').filter(d => d.source === 'firecrawl').map(d => d.competitor);
   const unverified = byStatus('unverified').map(d => {
     const reason = diff.unverifiedReasons?.[d.competitor];
     return reason ? `${d.competitor} — ${reason}` : d.competitor;
@@ -312,6 +317,7 @@ export function dataConfidenceSection(diff: StructuredDiff): string {
     '## Data Confidence',
     line('Verified (week-over-week diff)', verified),
     line('Baseline only (first snapshot this week)', baseline),
+    ...(partial.length > 0 ? [line('Partial read from web pages (not compared week over week)', partial)] : []),
     line('Unverified this week (no claims made)', unverified),
   ].join('\n');
 }

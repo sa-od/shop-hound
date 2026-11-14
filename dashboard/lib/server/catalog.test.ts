@@ -49,3 +49,11 @@ test('AI-read catalogues leave out stock and variants instead of reporting 100% 
   assert.equal(c.productCount, 2);
   assert.deepEqual(c.price, { min: 20, median: 30, max: 40 });
 });
+
+test('only full catalogues are compared week over week', async () => {
+  const { isFullCatalog } = await import('./snapshot-store');
+  assert.equal(isFullCatalog('shopify'), true);
+  assert.equal(isFullCatalog('shopify_relay'), true);
+  assert.equal(isFullCatalog(undefined), true); // snapshots from before sources were recorded
+  assert.equal(isFullCatalog('firecrawl'), false);
+});
