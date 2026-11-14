@@ -5,13 +5,14 @@ import { useSyncExternalStore } from "react";
 /**
  * Dates and times in the viewer's own time zone and locale. The server can't
  * know either (it runs in UTC), so the server render and the first client
- * render use a UTC, en-US form; once mounted, the browser's own form replaces it.
+ * render use a UTC, en-US form; once mounted, the browser’s own form replaces it.
+ * No zone name is shown: every time is simply the viewer’s local time.
  */
 
 type Format = "datetime" | "date" | "shortdate" | "time" | "calendar";
 
 const OPTIONS: Record<Format, Intl.DateTimeFormatOptions> = {
-  datetime: { month: "short", day: "numeric", hour: "numeric", minute: "2-digit", timeZoneName: "short" },
+  datetime: { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" },
   date: { month: "long", day: "numeric", year: "numeric" },
   shortdate: { month: "short", day: "numeric" },
   time: { hour: "numeric", minute: "2-digit" },
