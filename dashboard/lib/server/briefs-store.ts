@@ -204,17 +204,43 @@ export interface RunSummary {
   titleChanges: number;
 }
 
-type SlimBrief = Pick<BriefDoc, '_id' | 'competitorKey' | 'createdAt' | 'competitors'> & {
-  diff?: { diffs?: { competitor: string; previousProductCount?: number; previousSnapshotDate?: string | null; removedSkus?: unknown[]; catalog?: { productCount?: number } }[] };
+/** What the store and run lists need from a brief: counts only, no brief text or product lists. */
+type SlimBrief = Pick<BriefDoc, '_id' | 'competitorKey' | 'createdAt' | 'greenLight' | 'trigger'> & {
+  competitors: Pick<CompetitorSummary, 'competitor' | 'status' | 'productCount' | 'complete' | 'newSkus' | 'priceChanges' | 'titleChanges' | 'needsManualRead'>[];
+  diffs: { competitor: string; previousProductCount?: number; previousSnapshotDate?: string | null; removedCount: number; catalogCount?: number }[];
+  readable: boolean;
 };
 
-/** Fields listStores/listRuns need, without the heavy brief and product lists. */
-const SLIM_PROJECTION = {
-  competitorKey: 1, createdAt: 1, trigger: 1, greenLight: 1, competitors: 1,
-  'diff.diffs.competitor': 1, 'diff.diffs.catalog.productCount': 1,
-  'diff.diffs.previousProductCount': 1, 'diff.diffs.previousSnapshotDate': 1, 'diff.diffs.removedSkus.title': 1,
+const READABLE_EXPR = { $anyElementTrue: [{ $map: { input: '$competitors', as: 'c', in: { $in: ['$$c.status', ['verified', 'first_snapshot']] } } }] };
+
+/**
+ * Database-side projection to SlimBrief. Removed products are COUNTED here
+ * ($size), so no product lists leave the database.
+ */
+const SLIM_STAGE = {
+  $project: {
+    competitorKey: 1, createdAt: 1, greenLight: 1, trigger: 1,
+    competitors: {
+      $map: {
+        input: '$competitors', as: 'c',
+        in: {
+          competitor: '$$c.competitor', status: '$$c.status', productCount: '$$c.productCount', complete: '$$c.complete',
+          newSkus: '$$c.newSkus', priceChanges: '$$c.priceChanges', titleChanges: '$$c.titleChanges', needsManualRead: '$$c.needsManualRead',
+        },
+      },
+    },
+    diffs: {
+      $map: {
+        input: { $ifNull: ['$diff.diffs', []] }, as: 'd',
+        in: {
+          competitor: '$$d.competitor', previousProductCount: '$$d.previousProductCount', previousSnapshotDate: '$$d.previousSnapshotDate',
+          removedCount: { $size: { $ifNull: ['$$d.removedSkus', []] } }, catalogCount: '$$d.catalog.productCount',
+        },
+      },
+    },
+    readable: READABLE_EXPR,
+  },
 } as const;
-const SLIM_PROJECTION_WITH_REMOVED = { ...SLIM_PROJECTION, removedTotal: 1 } as const;
 
 /**
  * Products read in a brief. `shown`: the catalogue's count (checkout add-ons
@@ -223,7 +249,7 @@ const SLIM_PROJECTION_WITH_REMOVED = { ...SLIM_PROJECTION, removedTotal: 1 } as 
  */
 const readCount = (b: SlimBrief) => {
   const read = b.competitors.filter(isReadable);
-  const catalogCount = (c: string) => b.diff?.diffs?.find(d => d.competitor === c)?.catalog?.productCount;
+  const catalogCount = (c: string) => b.diffs.find(d => d.competitor === c)?.catalogCount;
   return {
     shown: read.reduce((n, c) => n + (catalogCount(c.competitor) ?? c.productCount), 0),
     raw: read.reduce((n, c) => n + c.productCount, 0),
@@ -237,47 +263,55 @@ const readCount = (b: SlimBrief) => {
  * changes (previous = now − new + removed, exact for the id-matched diff).
  */
 const compared = (b: SlimBrief) => {
-  const diffs = (b.diff?.diffs ?? []).filter(d => b.competitors.some(c => c.competitor === d.competitor && c.status === 'verified'));
+  const diffs = b.diffs.filter(d => b.competitors.some(c => c.competitor === d.competitor && c.status === 'verified'));
   if (diffs.length === 0) return null;
   let delta = 0;
   for (const d of diffs) {
     const c = b.competitors.find(x => x.competitor === d.competitor)!;
     // Matching is one-to-one, so the earlier count is exactly now − new + removed.
-    const previous = d.previousProductCount ?? c.productCount - c.newSkus + (d.removedSkus?.length ?? 0);
+    const previous = d.previousProductCount ?? c.productCount - c.newSkus + d.removedCount;
     delta += c.productCount - previous;
   }
   const since = diffs.map(d => d.previousSnapshotDate).filter((x): x is string => !!x).sort()[0];
   return { delta, ...(since ? { since } : {}) };
 };
 
-/** Every store set with a brief, newest latest brief first. */
+/**
+ * Every store set with a brief, newest latest brief first. Grouped in the
+ * database: one row per store comes back, however many runs it has.
+ */
 export async function listStores(): Promise<StoreSummary[]> {
-  const briefs = await db()
+  const rows = await db()
     .collection<BriefDoc>(BRIEFS)
-    .find({}, { projection: SLIM_PROJECTION })
-    .sort({ createdAt: -1 })
-    .toArray() as SlimBrief[];
+    .aggregate<{ _id: string; latest: SlimBrief; runCount: number; lastReadable: SlimBrief[] }>([
+      { $sort: { createdAt: -1 } },
+      SLIM_STAGE,
+      {
+        $group: {
+          _id: '$competitorKey',
+          latest: { $first: '$$ROOT' },
+          runCount: { $sum: { $cond: ['$readable', 1, 0] } },
+          // Readable briefs sort first, newest first: [0] is the latest readable one, if any.
+          lastReadable: { $topN: { n: 1, sortBy: { readable: -1, createdAt: -1 }, output: '$$ROOT' } },
+        },
+      },
+      { $sort: { 'latest.createdAt': -1 } },
+    ])
+    .toArray();
 
-  const byKey = new Map<string, SlimBrief[]>();
-  for (const b of briefs) {
-    const list = byKey.get(b.competitorKey);
-    if (list) list.push(b);
-    else byKey.set(b.competitorKey, [b]);
-  }
   const { trackingForKeys } = await import('./tracking');
-  const tracking = await trackingForKeys([...byKey.keys()]);
+  const tracking = await trackingForKeys(rows.map(r => r._id));
 
-  return [...byKey.entries()].map(([key, list]): StoreSummary => {
-    const latest = list[0];
-    const readableRuns = list.filter(b => b.competitors.some(isReadable));
-    const last = readableRuns[0] ? readCount(readableRuns[0]) : null;
-    const change = readableRuns[0] ? compared(readableRuns[0]) : null;
+  return rows.map(({ _id: key, latest, runCount, lastReadable }): StoreSummary => {
+    const readableBrief = lastReadable[0]?.readable ? lastReadable[0] : null;
+    const last = readableBrief ? readCount(readableBrief) : null;
+    const change = readableBrief ? compared(readableBrief) : null;
     return {
       store: key.split(',').join(', '),
       competitorKey: key,
       latestBriefId: latest._id.toHexString(),
       latestAt: latest.createdAt.toISOString(),
-      runCount: readableRuns.length,
+      runCount,
       productCount: last ? last.shown : null,
       productDelta: change ? change.delta : null,
       ...(change?.since ? { deltaSince: change.since } : {}),
@@ -288,44 +322,48 @@ export async function listStores(): Promise<StoreSummary[]> {
   });
 }
 
-/** A store set's readable runs, newest first (at most `limit`). */
-export async function listRuns(competitorKey: string, limit = 50): Promise<RunSummary[]> {
-  const docs = await db()
+function toRunSummary(d: SlimBrief): RunSummary {
+  const read = d.competitors.filter(isReadable);
+  const sum = (k: 'priceChanges' | 'newSkus' | 'titleChanges') => read.reduce((n, c) => n + c[k], 0);
+  const { shown: productCount, complete } = readCount(d);
+  const change = compared(d);
+  return {
+    id: d._id.toHexString(),
+    createdAt: d.createdAt.toISOString(),
+    greenLight: d.greenLight,
+    status: read.some(c => c.status === 'verified') ? 'verified' : 'first_snapshot',
+    ...(d.trigger ? { trigger: d.trigger } : {}),
+    productCount,
+    ...(change ? { productDelta: change.delta, ...(change.since ? { deltaSince: change.since } : {}) } : {}),
+    ...(complete ? {} : { complete: false }),
+    priceChanges: sum('priceChanges'),
+    newSkus: sum('newSkus'),
+    removed: d.diffs.filter(x => read.some(c => c.competitor === x.competitor)).reduce((n, x) => n + x.removedCount, 0),
+    titleChanges: sum('titleChanges'),
+  };
+}
+
+/**
+ * Readable runs for many store sets in ONE query (the Briefs list), newest
+ * first, at most `limit` per set. Sets with no readable run are absent.
+ */
+export async function listRunsForKeys(competitorKeys: string[], limit = 50): Promise<Map<string, RunSummary[]>> {
+  if (competitorKeys.length === 0) return new Map();
+  const rows = await db()
     .collection<BriefDoc>(BRIEFS)
-    .aggregate<SlimBrief & Pick<BriefDoc, 'greenLight' | 'trigger'> & { removedTotal: number }>([
-      { $match: { competitorKey, 'competitors.status': { $in: ['verified', 'first_snapshot'] } } },
+    .aggregate<{ _id: string; runs: SlimBrief[] }>([
+      { $match: { competitorKey: { $in: competitorKeys }, 'competitors.status': { $in: ['verified', 'first_snapshot'] } } },
       { $sort: { createdAt: -1 } },
-      { $limit: limit },
-      {
-        $addFields: {
-          removedTotal: {
-            $sum: { $map: { input: { $ifNull: ['$diff.diffs', []] }, as: 'd', in: { $size: { $ifNull: ['$$d.removedSkus', []] } } } },
-          },
-        },
-      },
-      { $project: SLIM_PROJECTION_WITH_REMOVED },
+      SLIM_STAGE,
+      { $group: { _id: '$competitorKey', runs: { $firstN: { n: limit, input: '$$ROOT' } } } },
     ])
     .toArray();
-  return docs.map(d => {
-    const read = d.competitors.filter(isReadable);
+  return new Map(rows.map(r => [r._id, r.runs.map(toRunSummary)]));
+}
 
-    const sum = (k: 'priceChanges' | 'newSkus' | 'titleChanges') => read.reduce((n, c) => n + c[k], 0);
-    const { shown: productCount, complete } = readCount(d);
-    return {
-      id: d._id.toHexString(),
-      createdAt: d.createdAt.toISOString(),
-      greenLight: d.greenLight,
-      status: read.some(c => c.status === 'verified') ? 'verified' : 'first_snapshot',
-      ...(d.trigger ? { trigger: d.trigger } : {}),
-      productCount,
-      ...((c => (c ? { productDelta: c.delta, ...(c.since ? { deltaSince: c.since } : {}) } : {}))(compared(d))),
-      ...(complete ? {} : { complete: false }),
-      priceChanges: sum('priceChanges'),
-      newSkus: sum('newSkus'),
-      removed: d.removedTotal,
-      titleChanges: sum('titleChanges'),
-    };
-  });
+/** A store set's readable runs, newest first (at most `limit`). */
+export async function listRuns(competitorKey: string, limit = 50): Promise<RunSummary[]> {
+  return (await listRunsForKeys([competitorKey], limit)).get(competitorKey) ?? [];
 }
 
 export async function countBriefs(): Promise<number> {

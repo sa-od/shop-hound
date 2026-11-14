@@ -72,6 +72,8 @@ interface RunDoc {
   attempt?: number;
   retryAt?: Date | null;
   retryReason?: string | null;
+  /** The store's own Retry-After: a user's re-add never starts the retry before this. */
+  notBefore?: Date | null;
   blocked?: boolean;
   manualRead?: boolean;
   manualReadInfo?: import('./contact').ManualRead | null;
@@ -163,14 +165,31 @@ async function sweepStale(): Promise<void> {
 /**
  * Put a store set at the back of the queue. If the same set is already queued
  * or running, that run is returned instead (`existing: true`).
+ *
+ * A user re-adding a store that is waiting to RETRY brings the retry forward
+ * to now (`expedited: true`) — but never before the store's own Retry-After,
+ * which is honoured. The forced try counts as one of the run's attempts.
+ *
  * Throws QueueFullError when MAX_QUEUED runs are already waiting.
  */
-export async function enqueueRun(args: { competitors: string[]; trigger: RunTrigger }): Promise<{ run: RunRecord; existing: boolean }> {
+export async function enqueueRun(args: { competitors: string[]; trigger: RunTrigger }): Promise<{ run: RunRecord; existing: boolean; expedited?: boolean }> {
   await sweepStale();
   const competitorKey = competitorKeyOf(args.competitors);
   const findExisting = () => runs().findOne({ competitorKey, active: true });
 
   const existing = await findExisting();
+  if (existing?.status === 'retrying' && args.trigger === 'dashboard' && existing.retryAt) {
+    const now = new Date();
+    const earliest = existing.notBefore && existing.notBefore > now ? existing.notBefore : now;
+    if (earliest < existing.retryAt) {
+      const moved = await runs().findOneAndUpdate(
+        { _id: existing._id, status: 'retrying' }, // still waiting (not claimed meanwhile)
+        { $set: { retryAt: earliest } },
+        { returnDocument: 'after' },
+      );
+      if (moved) return { run: toRecord(moved), existing: true, expedited: true };
+    }
+  }
   if (existing) return { run: toRecord(existing), existing: true };
   if ((await runs().countDocuments({ status: 'queued' })) >= MAX_QUEUED) throw new QueueFullError();
 
@@ -256,11 +275,14 @@ export async function reportProgress(runId: string, p: { step: RunStep; detail?:
   );
 }
 
-/** Put a running run back in line, to be tried again at `retryAt`. */
-export async function scheduleRetry(runId: string, retryAt: Date, reason: string): Promise<void> {
+/**
+ * Put a running run back in line, to be tried again at `retryAt`.
+ * `notBefore`: the store's own Retry-After, if it sent one.
+ */
+export async function scheduleRetry(runId: string, retryAt: Date, reason: string, notBefore: Date | null = null): Promise<void> {
   await runs().updateOne(
     { _id: runId, status: 'running' },
-    { $set: { status: 'retrying', retryAt, retryReason: reason.slice(0, 300), startedAt: null }, $unset: PROGRESS_FIELDS },
+    { $set: { status: 'retrying', retryAt, retryReason: reason.slice(0, 300), notBefore, startedAt: null }, $unset: PROGRESS_FIELDS },
   );
 }
 

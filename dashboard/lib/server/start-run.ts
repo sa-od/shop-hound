@@ -86,7 +86,8 @@ async function executeRun(run: RunRecord, deadlineAt: number): Promise<void> {
     if (err instanceof RunBlockedError && retriesLeft) {
       const retryAt = new Date(Date.now() + retryDelayMs(run.attempt, err.retryAfterMs)!);
       console.log(`[${run.runId}] blocked (${err.message}) — attempt ${run.attempt}, retrying at ${retryAt.toISOString()}`);
-      await scheduleRetry(run.runId, retryAt, err.message).catch(e => console.error(`[${run.runId}] could not schedule retry:`, e));
+      const notBefore = err.retryAfterMs ? new Date(Date.now() + err.retryAfterMs) : null;
+      await scheduleRetry(run.runId, retryAt, err.message, notBefore).catch(e => console.error(`[${run.runId}] could not schedule retry:`, e));
       return;
     }
     const message = err instanceof Error ? (err.stack ?? err.message) : String(err);
@@ -138,12 +139,12 @@ export function drainInBackground(opts: { wait: boolean }): void {
  *
  * Throws QueueFullError when the queue is full.
  */
-export async function queueRun(competitors: string[], trigger: RunTrigger): Promise<{ run: RunRecord; position: number; existing: boolean }> {
-  const { run, existing } = await enqueueRun({ competitors, trigger });
+export async function queueRun(competitors: string[], trigger: RunTrigger): Promise<{ run: RunRecord; position: number; existing: boolean; expedited: boolean }> {
+  const { run, existing, expedited = false } = await enqueueRun({ competitors, trigger });
   drainInBackground({ wait: true });
   const queue = await getQueue();
   const index = queue.findIndex(r => r.runId === run.runId);
-  return { run, existing, position: index === -1 ? 1 : index + 1 };
+  return { run, existing, expedited, position: index === -1 ? 1 : index + 1 };
 }
 
 /** Is something startable waiting while nothing runs? (cheap check for /api/status) */

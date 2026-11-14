@@ -22,6 +22,8 @@ export const maxDuration = 300;
  * 429 { error, code: 'queue_full' }
  *
  * Adding a store that is already queued or running returns that run (202).
+ * One waiting to retry is brought forward to now — or to the store's own
+ * Retry-After, if later: `status: 'retrying'`, `retryAt`, `expedited: true`.
  * `error` is written for the user and is shown as-is.
  */
 export async function POST(req: Request) {
@@ -53,8 +55,19 @@ export async function POST(req: Request) {
   }
 
   try {
-    const { run, position, existing } = await queueRun([parsed.domain], 'dashboard');
-    return NextResponse.json({ accepted: true, runId: run.runId, store: parsed.domain, position, existing }, { status: 202 });
+    const { run, position, existing, expedited } = await queueRun([parsed.domain], 'dashboard');
+    return NextResponse.json(
+      {
+        accepted: true,
+        runId: run.runId,
+        store: parsed.domain,
+        position,
+        existing,
+        status: run.status,
+        ...(run.status === 'retrying' && run.retryAt ? { retryAt: run.retryAt, expedited } : {}),
+      },
+      { status: 202 },
+    );
   } catch (err) {
     if (err instanceof QueueFullError) {
       return NextResponse.json(
