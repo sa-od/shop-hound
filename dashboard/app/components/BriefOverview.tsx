@@ -1,7 +1,7 @@
 import Link from "next/link";
-import { AlertTriangle, ArrowRight } from "lucide-react";
+import { ArrowRight } from "lucide-react";
 import type { BriefDetail } from "@/lib/api";
-import { formatMoney, movementRows, readableViolation, priceTickets, splitBrief, type CatalogSummary } from "@/lib/brief";
+import { formatMoney, movementRows, priceTickets, splitBrief, type CatalogSummary } from "@/lib/brief";
 import { LocalTime } from "./LocalTime";
 import { MovementsTable } from "./MovementsTable";
 import { Card, Rail, Ticket, TrustLine } from "./shelf";
@@ -86,19 +86,6 @@ export function BriefOverview({
     <div className="grid grid-cols-[minmax(0,1fr)] gap-6 lg:grid-cols-[minmax(0,1fr)_380px] lg:grid-rows-[auto_1fr] lg:gap-x-7">
       {/* Mobile order: summary, what to do, movements. Desktop: actions in a right column. */}
       <div className="min-w-0 space-y-6 lg:col-start-1 lg:row-start-1">
-        {!brief.greenLight && (
-          <div role="status" className="flex gap-3 rounded-lg border border-[#f0c9a0] bg-warn-soft p-4 text-sm text-warn">
-            <AlertTriangle size={18} className="mt-0.5 shrink-0" />
-            <p>
-              <strong className="font-semibold">This brief didn’t pass the Enkrypt audit.</strong>{" "}
-              {readableViolation(brief.grounding.violations[0] ?? brief.safety.violations[0]) ?? "Read it with care."}{" "}
-              <Link href={`/briefs/${brief.id}#audit`} className="underline">
-                See the audit
-              </Link>
-            </p>
-          </div>
-        )}
-
         <Card>
           <h1 className="font-cond text-[32px] font-extrabold leading-[1.05] tracking-tight sm:text-[36px]">
             Week of <LocalTime iso={brief.createdAt} format="date" />

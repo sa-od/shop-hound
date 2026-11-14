@@ -123,6 +123,11 @@ function AuditPanel({ brief }: { brief: BriefDetail }) {
       <h2 id="audit" className="scroll-mt-20 font-cond text-[22px] font-extrabold tracking-tight">
         Enkrypt AI audit
       </h2>
+      {!brief.greenLight && (
+        <p role="status" className="mt-2 text-sm font-semibold text-warn">
+          This brief didn’t pass the Enkrypt audit. Read it with care.
+        </p>
+      )}
       <dl className="mt-3 grid divide-y divide-[#eceef1] border-y border-[#eceef1] sm:grid-cols-2 sm:divide-x sm:divide-y-0">
         {checks.map((c) => (
           <div key={c.label} className="py-3.5 sm:px-5 sm:first:pl-0 sm:last:pr-0">
