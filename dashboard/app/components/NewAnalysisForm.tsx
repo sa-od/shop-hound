@@ -8,6 +8,7 @@ import { addStore, checkOneStore, type ManualAnswer } from "@/lib/run-client";
 import { useLiveStatus, type LiveState, type Outcome } from "@/lib/status-client";
 import { stepLabel } from "@/lib/run-steps";
 import { QueueList } from "./QueueList";
+import { RetryTime } from "./LocalTime";
 import { ManualReadLink, PlatformTag } from "./ManualRead";
 
 /** Add one store at a time; each add joins the queue, so the next can be typed straight away. */
@@ -17,7 +18,7 @@ export function NewAnalysisForm({ initial, autoFocus = false }: { initial: Statu
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<{ text: string; code?: string } | null>(null);
   // The store just added here: its line turns into the result once its run finishes.
-  const [added, setAdded] = useState<{ text: string; runId: string; store: string } | null>(null);
+  const [added, setAdded] = useState<{ text: React.ReactNode; runId: string; store: string } | null>(null);
   // The server checked the store and can't read it automatically: an option, not an error.
   const [manual, setManual] = useState<ManualAnswer | null>(null);
 
@@ -48,7 +49,19 @@ export function NewAnalysisForm({ initial, autoFocus = false }: { initial: Statu
     }
     setValue("");
     setAdded({
-      text: r.alreadyQueued ? `${r.store} is already in the queue.` : `${r.store} added.`,
+      text: r.expedited ? (
+        !r.retryAt || Date.parse(r.retryAt) <= Date.now() + 5_000 ? (
+          `Trying ${r.store} again now.`
+        ) : (
+          <>
+            {r.store} asked us to wait, trying again <RetryTime iso={r.retryAt} />.
+          </>
+        )
+      ) : r.alreadyQueued ? (
+        `${r.store} is already in the queue.`
+      ) : (
+        `${r.store} added.`
+      ),
       runId: r.runId,
       store: r.store,
     });
@@ -133,7 +146,7 @@ function resultFor(added: { runId: string; store: string }, live: LiveState): Ou
   };
 }
 
-function AddedLine({ added, live }: { added: { text: string; runId: string; store: string }; live: LiveState }) {
+function AddedLine({ added, live }: { added: { text: React.ReactNode; runId: string; store: string }; live: LiveState }) {
   const o = resultFor(added, live);
   if (!o) return <p className="mt-2 text-[13px] font-semibold leading-relaxed text-ink">{added.text}</p>;
   if (o.needsManualRead)

@@ -2,7 +2,16 @@
 import { addToQueue } from './status-client';
 
 export type AddResult =
-  | { ok: true; runId: string; store: string; position: number; alreadyQueued: boolean }
+  | {
+      ok: true;
+      runId: string;
+      store: string;
+      position: number;
+      alreadyQueued: boolean;
+      /** Re-adding a store that was waiting to retry brought its retry forward, to retryAt. */
+      expedited?: boolean;
+      retryAt?: string;
+    }
   | { ok: false; error: string; code?: string; manual?: undefined }
   /** The server checked the store and can't read it automatically: nothing was queued. */
   | { ok: false; code: 'manual_read'; manual: ManualAnswer; error: string };
@@ -37,6 +46,9 @@ export async function addStore(raw: string): Promise<AddResult> {
       error?: string;
       code?: string;
       existing?: boolean;
+      status?: 'queued' | 'running' | 'retrying';
+      retryAt?: string;
+      expedited?: boolean;
       accepted?: boolean;
       message?: string;
       contactEmail?: string;
@@ -61,7 +73,14 @@ export async function addStore(raw: string): Promise<AddResult> {
     // The server says when the store was already queued, running or retrying; the local check covers older servers.
     const seenHere = addToQueue({ runId: body.runId, store, position });
     const alreadyQueued = body.existing ?? seenHere;
-    return { ok: true, runId: body.runId, store, position, alreadyQueued };
+    return {
+      ok: true,
+      runId: body.runId,
+      store,
+      position,
+      alreadyQueued,
+      ...(body.expedited ? { expedited: true, retryAt: body.retryAt } : {}),
+    };
   } catch {
     return { ok: false, error: 'Couldn’t reach the server. Check your connection and try again.' };
   }
