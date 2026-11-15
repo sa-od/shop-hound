@@ -14,8 +14,8 @@ import type { GuardrailVerdict } from './types';
  *    model call errors, the input is treated as unverified and the agent never
  *    runs on it.
  *  - safetyAudit (output side): the generated brief must pass the
- *    deterministic numeric and product grounding checks (blocking: the
- *    0%-hallucination guarantee), a PII rule, and one structured model call that
+ *    deterministic numeric and product grounding checks (blocking: every
+ *    price and percentage must trace to the data), a PII rule, and one structured model call that
  *    judges it against SAFETY_POLICY_TEXT. Possible bias is a non-blocking
  *    warning from the same call.
  *
@@ -201,8 +201,8 @@ export async function safetyAudit(brief: string, diffContext: string): Promise<G
 
 /**
  * Deterministic numeric grounding: every dollar amount and percentage in the
- * brief must literally exist in the structured diff. Used as the primary
- * hallucination check, always blocking.
+ * brief must literally exist in the structured diff. Always blocking. It
+ * covers numbers only, not wording or recommendations.
  */
 export function verifyNumericGrounding(brief: string, diffContext: string): string[] {
   // All numeric tokens appearing anywhere in the diff JSON (incl. inside strings)

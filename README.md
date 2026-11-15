@@ -1,11 +1,12 @@
 # 🐕 ShopHound — AI Competitive Intelligence for Shopify
 
-**Competitive intelligence Shopify merchants can actually trust — verified, never hallucinated.**
+**Competitive intelligence for Shopify merchants, checked against the stores' real catalogues.**
 
 ShopHound scrapes competitor catalogs every week, detects what *actually* changed —
-price drops, new SKUs, title edits — and delivers a verified **Growth Brief** with a
-hard guarantee: **0% hallucination**. If a claim can't be traced to real scraped data,
-it never makes the brief.
+price drops, new SKUs, title edits — and delivers a **Growth Brief**. Every price and
+percentage in a brief is checked against the store's catalogue. Briefs that fail are
+flagged, and blocked store data never reaches the AI. Wording, unquoted product names
+and recommendations are not checked line by line.
 
 🔗 **Live app:** https://shop-hound.vercel.app/
 ⚙️ **Backend API:** https://my-mastara-engine.server.mastra.cloud/briefs
@@ -164,8 +165,8 @@ A 7-step Mastra workflow runs the pipeline:
 - **Output safety** (after the agent):
   - **Deterministic numeric and product grounding** (blocking): every `$` and `%` must
     trace to the verified diff and history, every number in a sentence naming a product
-    must belong to that product, and every quoted product must exist. This is the
-    mechanism behind **0% hallucination**.
+    must belong to that product, and every quoted product must exist. Claims without
+    a number or a quoted name, and the recommendations, are not checked this way.
   - **An email and phone-number rule** catches leaked personal data.
   - **One structured model call** judges the brief against the compliance policy: no
     price-fixing or coordination, no bypassing access controls, no ToS violations, no

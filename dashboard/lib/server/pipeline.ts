@@ -291,8 +291,7 @@ export async function runAnalysis(opts: RunOptions): Promise<RunResult> {
       '**Violations detected:**',
       ...grounding.violations.map(v => `- ${v}`),
       '',
-      '_This is the 0%-hallucination guarantee working: untrusted or malicious input is blocked,_',
-      '_never summarized._',
+      '_Blocked store data never reaches the AI._',
     ].join('\n');
   } else if (diffs.every(d => d.status === 'unverified')) {
     // Nothing was read, so there is nothing to analyse. Don't ask the model:
