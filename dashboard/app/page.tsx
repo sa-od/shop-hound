@@ -1,19 +1,28 @@
-import { getLatestBrief } from "@/lib/server/briefs-store";
+import { listStores } from "@/lib/server/briefs-store";
+import { getThisWeek } from "@/lib/server/this-week";
 import { getStatus } from "@/lib/server/status";
-import { CONTACT_EMAIL } from "@/lib/server/contact";
 import type { Status } from "@/lib/api";
-import { BriefOverview } from "./components/BriefOverview";
 import { NewAnalysisForm } from "./components/NewAnalysisForm";
+import { ThisWeekView } from "./components/ThisWeekView";
 import { Card } from "./components/shelf";
 
 export const dynamic = "force-dynamic";
 
-export default async function ThisWeek() {
-  const brief = await getLatestBrief();
+/** The last 7 days across every watched competitor, ranked. */
+export default async function Home() {
+  const [week, stores] = await Promise.all([getThisWeek({ days: 7 }), listStores()]);
+  const watched = stores.filter((s) => s.watching !== "ended");
 
   return (
     <main className="mx-auto w-full max-w-[1280px] flex-1 px-4 py-6 sm:px-8 sm:py-8">
-      {brief ? <BriefOverview brief={brief} linkToFull contactEmail={CONTACT_EMAIL} /> : <FirstUse status={await getStatus()} />}
+      {watched.length === 0 ? (
+        <FirstUse status={await getStatus()} />
+      ) : (
+        <ThisWeekView
+          data={week}
+          watched={watched.map((s) => ({ store: s.store, competitorKey: s.competitorKey, paused: s.watching === "paused" }))}
+        />
+      )}
     </main>
   );
 }

@@ -1,8 +1,9 @@
 import Link from "next/link";
 import { MessageSquare, ShieldCheck } from "lucide-react";
-import type { Change, ChangeKind, ChangeProduct } from "@/lib/api";
+import type { Change, ChangeKind, ChangeProduct, ThisWeek } from "@/lib/api";
 import { calendarDay, formatMoney, storeHref, type PriceTicket } from "@/lib/brief";
 import { Card, Rail, Ticket } from "./shelf";
+import { LocalTime } from "./LocalTime";
 
 /**
  * The week across every watched competitor. Fact lines come from the backend's
@@ -10,18 +11,11 @@ import { Card, Rail, Ticket } from "./shelf";
  * suggestion, shown in its own dashed box when present.
  */
 
-/** INTERIM: the getThisWeek() shape agreed with backend; replaced by its type from lib/api when it lands. */
-export interface ThisWeekData {
-  window: { from: string; to: string };
-  stores: { watched: number; read: number; unread: { store: string; reason: string }[] };
-  changes: Change[];
-  firstReads: { store: string; productCount: number; nextCheck: string | null }[];
-}
-
 /** Store-level status for the side list. */
 export interface WatchedStore {
   store: string;
   competitorKey: string;
+  paused?: boolean;
 }
 
 const TOP = 3;
@@ -102,7 +96,7 @@ function Row({ p, store, detail, value }: { p: ChangeProduct; store: string; det
 
 const rowsOf = (changes: Change[]) => changes.flatMap((c) => c.products.map((p) => ({ c, p })));
 
-export function ThisWeekView({ data, watched }: { data: ThisWeekData; watched: WatchedStore[] }) {
+export function ThisWeekView({ data, watched }: { data: ThisWeek; watched: WatchedStore[] }) {
   const changes = [...data.changes].filter((c) => !HIDDEN.includes(c.kind)).sort((a, b) => a.rank - b.rank);
   const top = changes.slice(0, TOP);
   const of = (...kinds: ChangeKind[]) => changes.filter((c) => kinds.includes(c.kind));
@@ -125,7 +119,7 @@ export function ThisWeekView({ data, watched }: { data: ThisWeekData; watched: W
     <>
       <h1 className="font-cond text-[32px] font-extrabold leading-tight tracking-tight sm:text-[36px]">This week</h1>
       <p className="mt-1 text-[13px] text-ink-3">
-        {calendarDay(data.window.from)} – {calendarDay(data.window.to)} · {data.stores.watched} competitor{data.stores.watched === 1 ? "" : "s"} watched ·{" "}
+        <LocalTime iso={data.window.from} format="shortdate" /> – <LocalTime iso={data.window.to} format="shortdate" /> · {data.stores.watched} competitor{data.stores.watched === 1 ? "" : "s"} watched ·{" "}
         {data.stores.read} read
         {data.stores.unread.length > 0 && (
           <>
@@ -143,7 +137,7 @@ export function ThisWeekView({ data, watched }: { data: ThisWeekData; watched: W
             <p className="rounded-lg bg-stock px-4 py-3.5 text-sm text-ink-2 ring-1 ring-edge">
               {data.firstReads.length > 0 && data.firstReads.length >= data.stores.read
                 ? `We’ve saved a first read of ${data.firstReads.length === 1 ? "your competitor" : `all ${data.firstReads.length} stores`}. Changes show here after the next check${nextAfter ? `, on or after ${calendarDay(nextAfter)}` : ""}.`
-                : `No changes from your ${data.stores.watched} competitor${data.stores.watched === 1 ? "" : "s"} since ${calendarDay(data.window.from)}.`}
+                : `No changes from your ${data.stores.watched} competitor${data.stores.watched === 1 ? "" : "s"} in the last 7 days.`}
             </p>
           ) : (
             <Card>
@@ -227,7 +221,9 @@ export function ThisWeekView({ data, watched }: { data: ThisWeekData; watched: W
                       {w.store}
                     </Link>
                     <span className="shrink-0 text-xs text-ink-3">
-                      {unread.has(w.store) ? (
+                      {w.paused ? (
+                        "Paused"
+                      ) : unread.has(w.store) ? (
                         <span className="text-warn">Not read</span>
                       ) : n ? (
                         `${n} change${n === 1 ? "" : "s"}`

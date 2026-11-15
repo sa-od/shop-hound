@@ -10,6 +10,8 @@ export interface Tracking {
   nextCheck: string | null;
   /** Never read yet because the store refused us for now; retried daily. */
   firstReadPending?: boolean;
+  /** Paused from My competitors: not checked until resumed. */
+  paused?: boolean;
 }
 
 /**
@@ -42,7 +44,9 @@ export function TrackingLine({ tracking, competitors, unreadable }: { tracking: 
 
   let text: React.ReactNode;
   let canRunAgain = false;
-  if (tracking.tracked && tracking.firstReadPending) {
+  if (tracking.paused) {
+    text = <>Paused. Not checked until you resume it.</>;
+  } else if (tracking.tracked && tracking.firstReadPending) {
     text = (
       <>
         We couldn’t read {competitors.length === 1 ? "this store" : "these stores"} yet.

@@ -9,6 +9,7 @@ import { LocalTime } from "@/app/components/LocalTime";
 import { RunsTable } from "@/app/components/RunsTable";
 import { StoreSection } from "@/app/components/StoreSection";
 import { TrackingLine } from "@/app/components/TrackingLine";
+import { StoreActions } from "@/app/components/StoreActions";
 
 export const dynamic = "force-dynamic";
 
@@ -36,18 +37,23 @@ export default async function StorePage({ params }: { params: Promise<{ store: s
       <Link href="/competitors" className="mb-3 inline-flex items-center gap-1.5 text-sm text-ink-2 hover:text-ink hover:underline">
         <ArrowLeft size={15} /> My competitors
       </Link>
-      <h1 className="font-cond text-[32px] font-extrabold leading-tight tracking-tight [overflow-wrap:anywhere] sm:text-[36px]">{s.store}</h1>
-      <p className="mt-1 text-[13px] text-ink-3">
-        {latestRun ? (
-          <>
-            Read <LocalTime iso={latestRun.createdAt} />
-          </>
-        ) : (
-          <>
-            Last tried <LocalTime iso={s.latestAt} />
-          </>
-        )}
-      </p>
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+        <div className="min-w-0">
+          <h1 className="font-cond text-[32px] font-extrabold leading-tight tracking-tight [overflow-wrap:anywhere] sm:text-[36px]">{s.store}</h1>
+          <p className="mt-1 text-[13px] text-ink-3">
+            {latestRun ? (
+              <>
+                Read <LocalTime iso={latestRun.createdAt} />
+              </>
+            ) : (
+              <>
+                Last tried <LocalTime iso={s.latestAt} />
+              </>
+            )}
+          </p>
+        </div>
+        {s.watching !== "ended" && <StoreActions competitorKey={s.competitorKey} store={s.store} watching={s.watching} variant="bar" />}
+      </div>
 
       <div className="mt-6 grid gap-6 lg:grid-cols-[minmax(0,1fr)_340px] lg:items-start">
         <div className="min-w-0 space-y-6">

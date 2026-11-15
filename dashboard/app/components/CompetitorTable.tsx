@@ -8,6 +8,7 @@ import { useLiveStatus } from "@/lib/status-client";
 import { RUN_STEPS, stepLabel, stepNumber } from "@/lib/run-steps";
 import { LocalTime, RetryPhrase } from "./LocalTime";
 import { Delta } from "./RunsTable";
+import { StoreActions } from "./StoreActions";
 
 type Row = { store: StoreSummary; runs: RunSummary[] };
 
@@ -50,9 +51,25 @@ function Latest({ s, run, live }: { s: StoreSummary; run?: RunSummary; live?: Qu
   return <span>{parts.join(" · ")}</span>;
 }
 
+/** Live state from the poller when it has the store, else what the server saw when the page loaded. */
+function serverLive(s: StoreSummary): QueueItem | undefined {
+  const base = { runId: `server-${s.competitorKey}`, store: s.store, position: 0, queuedAt: "" };
+  if (s.reading) return { ...base, status: "running", step: s.reading.step ?? undefined };
+  if (s.retrying) return { ...base, status: "retrying", retryAt: s.retrying.retryAt, reason: s.retrying.reason ?? undefined };
+  if (s.queued) return { ...base, status: "queued" };
+  return undefined;
+}
+
 /** Whether and how the store is watched: weekly, indefinitely, until paused or removed. */
 function Watching({ s, contactEmail }: { s: StoreSummary; contactEmail: string | null }) {
   const t = s.tracking;
+  if (s.watching === "paused")
+    return (
+      <>
+        Paused
+        <span className="block text-xs text-ink-3">Not checked until you resume</span>
+      </>
+    );
   if (s.needsManualRead)
     return contactEmail ? (
       <a href={manualReadHref(contactEmail, s.store)} className="font-semibold underline underline-offset-2 hover:no-underline">
@@ -62,24 +79,25 @@ function Watching({ s, contactEmail }: { s: StoreSummary; contactEmail: string |
       <span className="text-ink-2">Email us to track it</span>
     );
   // Never read yet (refused us, or still waiting): it's tried again, not "weekly".
-  if (t.tracked && (t.firstReadPending || s.runCount === 0))
+  const next = s.nextCheck ?? t.nextCheck;
+  if (s.watching === "active" && (t.firstReadPending || s.runCount === 0))
     return (
       <>
         Trying again
-        {t.nextCheck && (
+        {next && (
           <span className="block text-xs text-ink-3">
-            Next try <LocalTime iso={t.nextCheck} format="shortdate" />
+            Next try <LocalTime iso={next} format="shortdate" />
           </span>
         )}
       </>
     );
-  if (t.tracked)
+  if (s.watching === "active")
     return (
       <>
         Weekly
-        {t.nextCheck && (
+        {next && (
           <span className="block text-xs text-ink-3">
-            Next on or after <LocalTime iso={t.nextCheck} format="shortdate" />
+            Next on or after <LocalTime iso={next} format="shortdate" />
           </span>
         )}
       </>
@@ -114,14 +132,12 @@ export function CompetitorTable({
 }) {
   const { queue } = useLiveStatus(initial);
   const liveFor = (store: string) => queue.find((q) => q.store === store);
+  const liveOf = (s: StoreSummary) => liveFor(s.store) ?? serverLive(s);
   const known = new Set([...watched, ...notWatching].map((r) => r.store.store));
   const pending = queue.filter((q) => !known.has(q.store));
   // A store being read again moves into the main list while it runs.
-  const rows = [
-    ...watched,
-    ...notWatching.filter((r) => liveFor(r.store.store)),
-  ];
-  const rest = notWatching.filter((r) => !liveFor(r.store.store));
+  const rows = [...watched, ...notWatching.filter((r) => liveOf(r.store))];
+  const rest = notWatching.filter((r) => !liveOf(r.store));
 
   if (rows.length === 0 && pending.length === 0)
     return (
@@ -144,11 +160,14 @@ export function CompetitorTable({
         ))}
         {rows.map(({ store: s, runs }) => (
           <li key={s.competitorKey} className="px-4 py-3">
-            <Link href={storeHref(s.competitorKey)} className="font-cond text-lg font-bold hover:underline">
-              {s.store}
-            </Link>
+            <div className="flex items-start justify-between gap-3">
+              <Link href={storeHref(s.competitorKey)} className="font-cond text-lg font-bold hover:underline">
+                {s.store}
+              </Link>
+              {s.watching !== "ended" && <StoreActions competitorKey={s.competitorKey} store={s.store} watching={s.watching} />}
+            </div>
             <div className="mt-0.5 text-[13px]">
-              <Latest s={s} run={runs[0]} live={liveFor(s.store)} />
+              <Latest s={s} run={runs[0]} live={liveOf(s)} />
             </div>
             <div className="mt-1 text-xs text-ink-3">
               {s.productCount !== null && (
@@ -171,6 +190,7 @@ export function CompetitorTable({
               <th scope="col" className="w-32 px-4 py-2.5 text-right font-semibold">Products</th>
               <th scope="col" className="px-4 py-2.5 text-left font-semibold">Latest check</th>
               <th scope="col" className="w-64 px-4 py-2.5 text-left font-semibold">Watching</th>
+              <th scope="col" className="w-14 px-4 py-2.5"><span className="sr-only">Actions</span></th>
             </tr>
           </thead>
           <tbody>
@@ -185,6 +205,7 @@ export function CompetitorTable({
                   <Latest s={{ store: q.store } as StoreSummary} live={q} />
                 </td>
                 <td className="px-4 py-3 align-top text-ink-3">Weekly once read</td>
+                <td />
               </tr>
             ))}
             {rows.map(({ store: s, runs }) => (
@@ -208,10 +229,13 @@ export function CompetitorTable({
                   )}
                 </td>
                 <td className="px-4 py-3 align-top">
-                  <Latest s={s} run={runs[0]} live={liveFor(s.store)} />
+                  <Latest s={s} run={runs[0]} live={liveOf(s)} />
                 </td>
                 <td className="px-4 py-3 align-top text-ink-2">
                   <Watching s={s} contactEmail={contactEmail} />
+                </td>
+                <td className="px-4 py-2.5 text-right align-top">
+                  {s.watching !== "ended" && <StoreActions competitorKey={s.competitorKey} store={s.store} watching={s.watching} />}
                 </td>
               </tr>
             ))}
