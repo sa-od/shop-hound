@@ -212,8 +212,8 @@ export interface StoreSummary {
   nextCheck: string | null;
   /** Being read right now: the step and when it began. */
   reading?: { step: import('./runs').RunStep | null; stepStartedAt: string | null };
-  /** Waiting to retry because the store refused us for now. */
-  retrying?: { retryAt: string; reason: string | null };
+  /** Waiting to retry: the store refused us for now ('store'), or a problem on our side ('ours', shown as our banner, not the store's). */
+  retrying?: { retryAt: string; reason: string | null; failureKind: import('./failure').FailureKind };
   /** Waiting in the queue. */
   queued?: true;
   /**
@@ -358,7 +358,7 @@ export function weekTotals(b: Pick<SlimBrief, 'competitors' | 'diffs'>): StoreSu
   return { total: Object.values(byKind).reduce((n, v) => n + (v ?? 0), 0), byKind };
 }
 
-interface ActiveRunRow { status: 'queued' | 'running' | 'retrying'; step?: import('./runs').RunStep; stepStartedAt?: Date; retryAt?: Date | null; retryReason?: string | null }
+interface ActiveRunRow { status: 'queued' | 'running' | 'retrying'; step?: import('./runs').RunStep; stepStartedAt?: Date; retryAt?: Date | null; retryReason?: string | null; failureKind?: import('./failure').FailureKind | null }
 
 /**
  * Every store set with a brief, newest latest brief first — except stores the
@@ -400,7 +400,7 @@ export async function listStores(now = new Date()): Promise<StoreSummary[]> {
           let: { key: '$_id' },
           pipeline: [
             { $match: { active: true, $expr: { $eq: ['$competitorKey', '$$key'] } } },
-            { $project: { _id: 0, status: 1, step: 1, stepStartedAt: 1, retryAt: 1, retryReason: 1 } },
+            { $project: { _id: 0, status: 1, step: 1, stepStartedAt: 1, retryAt: 1, retryReason: 1, failureKind: 1 } },
           ],
           as: 'activeRun',
         },
@@ -437,7 +437,7 @@ export async function listStores(now = new Date()): Promise<StoreSummary[]> {
       watching: watchingOf(t),
       nextCheck: t.nextCheck,
       ...(run?.status === 'running' ? { reading: { step: run.step ?? null, stepStartedAt: run.stepStartedAt?.toISOString() ?? null } } : {}),
-      ...(run?.status === 'retrying' && run.retryAt ? { retrying: { retryAt: run.retryAt.toISOString(), reason: run.retryReason ?? null } } : {}),
+      ...(run?.status === 'retrying' && run.retryAt ? { retrying: { retryAt: run.retryAt.toISOString(), reason: run.retryReason ?? null, failureKind: run.failureKind === 'ours' ? 'ours' : 'store' } } : {}),
       ...(run?.status === 'queued' ? { queued: true as const } : {}),
       week: wk?.inWeek ? { ...weekTotals(wk), briefId: wk._id.toHexString() } : { total: 0, byKind: {} },
     };

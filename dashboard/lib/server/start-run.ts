@@ -2,8 +2,9 @@ import 'server-only';
 import { after } from 'next/server';
 import { getDeadline } from '@vercel/functions';
 import { runAnalysis, RunBlockedError } from './pipeline';
+import { classifyFailure, ourFailureDelayMs, MAX_OUR_FAILURES } from './failure';
 import { hasRetriesLeft, retryDelayMs } from './retry-policy';
-import { claimNextRun, enqueueRun, finishRun, getActiveRun, getQueue, hasClaimableRun, reportProgress, scheduleRetry, type RunRecord, type RunStep, type RunTrigger } from './runs';
+import { claimNextRun, deferForOurFailure, enqueueRun, finishRun, getActiveRun, getQueue, hasClaimableRun, reportProgress, scheduleRetry, type RunRecord, type RunStep, type RunTrigger } from './runs';
 import type { RunProgress } from './pipeline';
 
 // Detail-only progress (e.g. "500 products so far") is written at most this
@@ -59,8 +60,12 @@ function requestDeadline(requestStartedAt: number): number {
   return platform - OUTCOME_MARGIN_MS;
 }
 
-/** Execute one claimed run to completion, recording success or failure. Never throws. */
-async function executeRun(run: RunRecord, deadlineAt: number): Promise<void> {
+/**
+ * Execute one claimed run to completion, recording success or failure. Never
+ * throws. Returns 'deferred' when it was put back after a failure on our side
+ * (the queue is then paused, so the drain should stop).
+ */
+async function executeRun(run: RunRecord, deadlineAt: number): Promise<'done' | 'deferred'> {
   const retriesLeft = hasRetriesLeft(run.attempt);
   const progress = progressReporter(run.runId);
   try {
@@ -81,6 +86,7 @@ async function executeRun(run: RunRecord, deadlineAt: number): Promise<void> {
       manualRead: result.manualRead.length > 0,
       manualReadInfo: result.manualReadInfo,
     });
+    return 'done';
   } catch (err) {
     await progress.flushed();
     if (err instanceof RunBlockedError && retriesLeft) {
@@ -88,13 +94,27 @@ async function executeRun(run: RunRecord, deadlineAt: number): Promise<void> {
       console.log(`[${run.runId}] blocked (${err.message}) — attempt ${run.attempt}, retrying at ${retryAt.toISOString()}`);
       const notBefore = err.retryAfterMs ? new Date(Date.now() + err.retryAfterMs) : null;
       await scheduleRetry(run.runId, retryAt, err.message, notBefore).catch(e => console.error(`[${run.runId}] could not schedule retry:`, e));
-      return;
+      return 'done';
     }
     const message = err instanceof Error ? (err.stack ?? err.message) : String(err);
-    console.error(`[${run.runId}] failed:`, message);
-    await finishRun(run.runId, { status: 'failed', error: message, failedStep: progress.current() }).catch(e =>
+    const failureKind = classifyFailure(err);
+    // Our side broke (credentials, quota, database, model): the store did
+    // nothing wrong, so put the run back without using up its attempts, and
+    // pause the queue — the next store would fail the same way.
+    if (failureKind === 'ours' && run.ourFailures + 1 < MAX_OUR_FAILURES) {
+      const retryAt = new Date(Date.now() + ourFailureDelayMs(run.ourFailures + 1));
+      console.error(`[${run.runId}] failed on our side (${run.ourFailures + 1} in a row), retrying at ${retryAt.toISOString()}:`, message);
+      const ok = await deferForOurFailure(run.runId, retryAt, 'A problem on our side, not the store’s — we’ll try again automatically').then(
+        () => true,
+        e => (console.error(`[${run.runId}] could not put the run back:`, e), false),
+      );
+      if (ok) return 'deferred';
+    }
+    console.error(`[${run.runId}] failed (${failureKind}):`, message);
+    await finishRun(run.runId, { status: 'failed', error: message, failedStep: progress.current(), failureKind }).catch(e =>
       console.error(`[${run.runId}] could not record failure:`, e),
     );
+    return 'done';
   }
 }
 
@@ -112,7 +132,7 @@ async function drainQueue(deadlineAt: number, wait: boolean): Promise<void> {
       if (deadlineAt - Date.now() < MIN_RUN_MS) return; // leftovers: next request or the daily cron
       const run = await claimNextRun();
       if (run) {
-        await executeRun(run, deadlineAt);
+        if ((await executeRun(run, deadlineAt)) === 'deferred') return; // queue paused: our side is broken
         await new Promise(r => setTimeout(r, RUN_GAP_MS));
         continue;
       }

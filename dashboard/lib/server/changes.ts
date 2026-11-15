@@ -102,8 +102,9 @@ export function changesFromCompetitorDiff(d: CompetitorDiff, briefId: string): C
   const out: Change[] = [];
 
   const priceMove = (kind: 'price_cut' | 'price_rise', verb: string) => {
+    // A drop to $0 isn't a cut: the product stopped being sold online (catalog.unpriced).
     const moves = d.priceChanges
-      .filter(p => (kind === 'price_cut' ? p.newPrice < p.oldPrice : p.newPrice > p.oldPrice))
+      .filter(p => (kind === 'price_cut' ? p.newPrice < p.oldPrice && p.newPrice > 0 : p.newPrice > p.oldPrice))
       .sort((a, b) => Math.abs(b.changePct) - Math.abs(a.changePct) || a.title.localeCompare(b.title));
     if (moves.length === 0) return;
     const products = moves.map(p => ({ title: p.title, url: p.url, oldPrice: p.oldPrice, newPrice: p.newPrice, pct: p.changePct }));

@@ -31,7 +31,8 @@ async function main() {
     console.log('grounding:', result.auditLog.grounding.greenLight, result.auditLog.grounding.violations);
     console.log('safety:   ', result.auditLog.safety.greenLight, result.auditLog.safety.violations);
   } catch (err) {
-    await finishRun(run.runId, { status: 'failed', error: String(err instanceof Error ? (err.stack ?? err.message) : err) });
+    const { classifyFailure } = await import('../lib/server/failure');
+    await finishRun(run.runId, { status: 'failed', error: String(err instanceof Error ? (err.stack ?? err.message) : err), failureKind: classifyFailure(err) });
     throw err;
   } finally {
     console.log(`took ${Math.round((Date.now() - started) / 1000)}s`);

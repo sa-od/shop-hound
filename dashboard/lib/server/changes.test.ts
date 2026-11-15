@@ -75,3 +75,7 @@ test('changesFromDiff ranks across a multi-store brief', () => {
   const cs = changesFromDiff({ diffs: [diff({ competitor: 'x.com', newSkus: [{ productId: '1', title: 'N', price: 1, url: 'u' }] }), diff({ priceChanges: [pc('A', 2, 1, -50)] })] }, 'b');
   assert.deepEqual(cs.map(c => [c.rank, c.kind]), [[1, 'price_cut'], [2, 'new']]);
 });
+
+test('a drop to $0 is not a price cut (the product stopped being sold online)', () => {
+  assert.deepEqual(changesFromCompetitorDiff(diff({ priceChanges: [pc('Gone', 30, 0, -100)] }), 'b'), []);
+});

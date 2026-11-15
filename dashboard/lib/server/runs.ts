@@ -1,5 +1,5 @@
 import { MongoServerError } from 'mongodb';
-import { db, RUNS } from './db';
+import { db, RUNS, QUEUE_STATE } from './db';
 import { competitorKeyOf } from './tracking';
 
 /**
@@ -51,6 +51,10 @@ export interface RunRecord {
   baseline: boolean | null;
   /** Failed runs: the step it failed in. */
   failedStep: RunStep | null;
+  /** Whose fault a failed or store-limited run was (null: succeeded cleanly). See failure.ts. */
+  failureKind: import('./failure').FailureKind | null;
+  /** Our-side failures in a row for this run (each put it back without using a store attempt). */
+  ourFailures: number;
 }
 
 import type { RunStep } from '../api';
@@ -82,6 +86,8 @@ interface RunDoc {
   stepDetail?: string;
   baseline?: boolean;
   failedStep?: RunStep | null;
+  failureKind?: import('./failure').FailureKind | null;
+  ourFailures?: number;
 }
 
 /**
@@ -138,6 +144,8 @@ function toRecord(d: RunDoc): RunRecord {
     stepDetail: d.stepDetail ?? null,
     baseline: d.baseline ?? null,
     failedStep: d.failedStep ?? null,
+    failureKind: d.failureKind ?? null,
+    ourFailures: d.ourFailures ?? 0,
   };
 }
 
@@ -149,15 +157,15 @@ async function sweepStale(): Promise<void> {
   await Promise.all([
     runs().updateMany(
       { status: 'running', startedAt: { $lt: new Date(now - STALE_RUN_MS) } },
-      { $set: { status: 'failed', finishedAt: new Date(), error: 'run did not finish within the function time limit' }, $unset: { active: '' } },
+      { $set: { status: 'failed', finishedAt: new Date(), error: 'run did not finish within the function time limit', failureKind: 'ours' }, $unset: { active: '' } },
     ),
     runs().updateMany(
       { status: 'queued', queuedAt: { $lt: new Date(now - STALE_QUEUED_MS) } },
-      { $set: { status: 'failed', finishedAt: new Date(), error: 'was never started — add the store again' }, $unset: { active: '' } },
+      { $set: { status: 'failed', finishedAt: new Date(), error: 'was never started — add the store again', failureKind: 'ours' }, $unset: { active: '' } },
     ),
     runs().updateMany(
       { status: 'retrying', retryAt: { $lt: new Date(now - STALE_QUEUED_MS) } },
-      { $set: { status: 'failed', finishedAt: new Date(), error: 'the retry was never started — add the store again' }, $unset: { active: '' } },
+      { $set: { status: 'failed', finishedAt: new Date(), error: 'the retry was never started — add the store again', failureKind: 'ours' }, $unset: { active: '' } },
     ),
   ]);
 }
@@ -251,8 +259,9 @@ export async function startRunNow(args: { competitors: string[]; trigger: RunTri
 /** Queued runs, and retries whose time has come. */
 const CLAIMABLE = () => ({ $or: [{ status: 'queued' as const }, { status: 'retrying' as const, retryAt: { $lte: new Date() } }] });
 
-/** Is there a run a drainer could start right now? */
+/** Is there a run a drainer could start right now? (Not while the queue is paused.) */
 export async function hasClaimableRun(): Promise<boolean> {
+  if (await getQueuePause()) return false;
   return (await runs().countDocuments(CLAIMABLE(), { limit: 1 })) > 0;
 }
 
@@ -282,8 +291,42 @@ export async function reportProgress(runId: string, p: { step: RunStep; detail?:
 export async function scheduleRetry(runId: string, retryAt: Date, reason: string, notBefore: Date | null = null): Promise<void> {
   await runs().updateOne(
     { _id: runId, status: 'running' },
-    { $set: { status: 'retrying', retryAt, retryReason: reason.slice(0, 300), notBefore, startedAt: null }, $unset: PROGRESS_FIELDS },
+    { $set: { status: 'retrying', retryAt, retryReason: reason.slice(0, 300), notBefore, startedAt: null, failureKind: 'store', ourFailures: 0 }, $unset: PROGRESS_FIELDS },
   );
+}
+
+/**
+ * Put a running run back after a failure on OUR side (see failure.ts): it is
+ * retried at `retryAt` and the attempt it just used is given back, so it
+ * never counts against the store. The whole queue pauses until then too —
+ * whatever broke would break the next store's run the same way.
+ */
+export async function deferForOurFailure(runId: string, retryAt: Date, reason: string): Promise<void> {
+  await Promise.all([
+    runs().updateOne(
+      { _id: runId, status: 'running' },
+      {
+        $set: { status: 'retrying', retryAt, retryReason: reason.slice(0, 300), startedAt: null, failureKind: 'ours' },
+        $inc: { attempt: -1, ourFailures: 1 },
+        $unset: PROGRESS_FIELDS,
+      },
+    ),
+    pauseQueue(retryAt, reason),
+  ]);
+}
+
+interface QueueStateDoc { _id: 'queue'; pausedUntil: Date; reason: string }
+const queueState = () => db().collection<QueueStateDoc>(QUEUE_STATE);
+
+/** Hold every claim until `until` (after an our-side failure). */
+export async function pauseQueue(until: Date, reason: string): Promise<void> {
+  await queueState().updateOne({ _id: 'queue' }, { $set: { pausedUntil: until, reason: reason.slice(0, 300) } }, { upsert: true });
+}
+
+/** The queue's current pause, if one is in force. */
+export async function getQueuePause(): Promise<{ until: string; reason: string } | null> {
+  const d = await queueState().findOne({ _id: 'queue' });
+  return d && d.pausedUntil > new Date() ? { until: d.pausedUntil.toISOString(), reason: d.reason } : null;
 }
 
 /**
@@ -293,6 +336,7 @@ export async function scheduleRetry(runId: string, retryAt: Date, reason: string
  */
 export async function claimNextRun(): Promise<RunRecord | null> {
   await sweepStale();
+  if (await getQueuePause()) return null; // paused after a failure on our side
   try {
     const doc = await runs().findOneAndUpdate(
       CLAIMABLE(),
@@ -310,7 +354,7 @@ export async function finishRun(
   runId: string,
   outcome:
     | { status: 'success'; briefId: string; blocked?: boolean; manualRead?: boolean; manualReadInfo?: import('./contact').ManualRead | null }
-    | { status: 'failed'; error: string; failedStep?: RunStep | null },
+    | { status: 'failed'; error: string; failedStep?: RunStep | null; failureKind: import('./failure').FailureKind },
 ): Promise<void> {
   await runs().updateOne(
     { _id: runId },
@@ -324,6 +368,9 @@ export async function finishRun(
         manualRead: outcome.status === 'success' && outcome.manualRead === true,
         manualReadInfo: outcome.status === 'success' ? (outcome.manualReadInfo ?? null) : null,
         failedStep: outcome.status === 'failed' ? (outcome.failedStep ?? null) : null,
+        // A finished run whose store refused us or can't be read is the store's doing.
+        failureKind:
+          outcome.status === 'failed' ? outcome.failureKind : outcome.blocked || outcome.manualRead ? 'store' : null,
         retryAt: null,
       },
       $unset: { active: '', ...PROGRESS_FIELDS },

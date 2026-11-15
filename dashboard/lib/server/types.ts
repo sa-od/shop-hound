@@ -69,6 +69,7 @@ const productRefSchema = z.object({ title: z.string(), price: z.number(), url: z
 export const catalogSummarySchema = z.object({
   productCount: z.number(), // merchandise only: checkout add-ons are left out (see addOnsExcluded)
   addOnsExcluded: z.number().optional(), // add-ons (shipping protection, gift cards…) not counted
+  unpriced: z.number().optional(), // products listed at $0 (not for sale online): counted in productCount, left out of price figures
   currency: z.string(),
   price: z.object({ min: z.number(), median: z.number(), max: z.number() }), // product.price = lowest variant price
   priceBands: z.array(z.object({ label: z.string(), min: z.number().nullable(), max: z.number().nullable(), count: z.number() })), // [min, max)

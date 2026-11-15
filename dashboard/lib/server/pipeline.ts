@@ -5,6 +5,7 @@ import { saveSnapshot, getBaselineSnapshot, getLatestSnapshotInfo, isFullCatalog
 import { summarizeCatalog } from './catalog';
 import { daysBetween, diffSnapshots, verifyDiffAgainstPayload } from './diff-engine';
 import { groundingCheck, safetyAudit } from './guardrails';
+import { OurSideError } from './failure';
 import { briefsForCompetitors, saveBrief } from './briefs-store';
 import { generateGrowthBrief } from './agent';
 import { detectPlatform } from './platform';
@@ -272,6 +273,11 @@ export async function runAnalysis(opts: RunOptions): Promise<RunResult> {
     grounding.greenLight = false;
     grounding.violations.push(...groundingErrors);
   }
+  // The screen couldn't run and nothing else was found: that's our failure,
+  // not the store's data — don't withhold a brief over it, try again later.
+  if (!grounding.enabled && groundingErrors.length === 0 && ((grounding.detail?.rules as string[] | undefined)?.length ?? 0) === 0) {
+    throw new OurSideError(grounding.violations.join('; '));
+  }
   if (!grounding.greenLight) {
     log(`[grounding] BLOCKED — agent will not run: ${grounding.violations.join('; ')}`);
   }
@@ -358,6 +364,8 @@ export async function runAnalysis(opts: RunOptions): Promise<RunResult> {
     // Audit context = diff + the verified history the agent was shown, so trend
     // numbers audit as grounded. `diffs` stays top-level for the numeric check.
     safety = await safetyAudit(brief, JSON.stringify({ ...diff, history: JSON.parse(history) }));
+    // The policy check couldn't run: our failure — don't archive an unaudited brief, try again later.
+    if (!safety.enabled) throw new OurSideError(safety.violations[0] ?? 'The policy check could not run');
     if (!safety.greenLight) {
       log(`[safety] brief FAILED audit: ${safety.violations.join('; ')}`);
     }

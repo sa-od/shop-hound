@@ -75,7 +75,14 @@ export function summarizeCatalog(allProducts: NormalizedProduct[], opts: { stock
   const addOnsExcluded = allProducts.length - products.length;
   if (products.length === 0) return undefined;
   const currency = products[0].currency || 'USD';
-  const prices = products.map(p => p.price).sort((a, b) => a - b);
+  // Products listed at $0 aren't for sale online (lunchly.com lists all 11 at
+  // $0, drinkprime.com 24 of 50): they'd make "$0" the cheapest price and the
+  // lowest band. Price figures use priced products; `unpriced` counts the rest.
+  // (If none is priced, the figures stay at 0 and unpriced says why.)
+  const priced = products.filter(p => p.price > 0);
+  const unpriced = products.length - priced.length;
+  const forPrices = priced.length > 0 ? priced : products;
+  const prices = forPrices.map(p => p.price).sort((a, b) => a - b);
   const min = prices[0];
   const max = prices[prices.length - 1];
   const sym = symbol(currency);
@@ -98,7 +105,7 @@ export function summarizeCatalog(allProducts: NormalizedProduct[], opts: { stock
 
   const inStock = products.filter(p => p.available).length;
   const pick = (p: NormalizedProduct) => ({ title: p.title, price: p.price, url: p.url });
-  const byPrice = [...products].sort((a, b) => a.price - b.price || a.title.localeCompare(b.title));
+  const byPrice = [...forPrices].sort((a, b) => a.price - b.price || a.title.localeCompare(b.title));
 
   return {
     productCount: products.length,
@@ -119,5 +126,6 @@ export function summarizeCatalog(allProducts: NormalizedProduct[], opts: { stock
     cheapest: byPrice.slice(0, 3).map(pick),
     priciest: byPrice.slice(-3).reverse().map(pick),
     ...(addOnsExcluded > 0 ? { addOnsExcluded } : {}),
+    ...(unpriced > 0 ? { unpriced } : {}),
   };
 }

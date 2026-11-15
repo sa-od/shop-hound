@@ -1,18 +1,24 @@
 import 'server-only';
 import { listRecentBriefs, countBriefs } from './briefs-store';
-import { getQueue, getLastFinishedRun } from './runs';
+import { getQueue, getLastFinishedRun, getQueuePause } from './runs';
+import { classifyFailure } from './failure';
 import { MAX_ATTEMPTS } from './start-run';
 import { CONTACT_EMAIL } from './contact';
 import type { Status } from '@/lib/api';
 
 /** Everything the top bar, the add-store form and the queue list need, in one read. */
 export async function getStatus(): Promise<Status> {
-  const [queue, lastRun, [latest], totalBriefs] = await Promise.all([
+  const [queue, lastRun, [latest], totalBriefs, queuePaused] = await Promise.all([
     getQueue(),
     getLastFinishedRun(),
     listRecentBriefs(1),
     countBriefs(),
+    getQueuePause(),
   ]);
+  // Older runs have no stored failureKind: derive it the same way.
+  const failureKind = lastRun
+    ? (lastRun.failureKind ?? (lastRun.status === 'failed' ? classifyFailure(lastRun.error) : lastRun.blocked || lastRun.manualRead ? 'store' : null))
+    : null;
   const active = queue.find(r => r.status === 'running') ?? null;
   return {
     running: active !== null,
@@ -23,7 +29,7 @@ export async function getStatus(): Promise<Status> {
       status: r.status === 'running' ? 'running' : r.status === 'retrying' ? 'retrying' : 'queued',
       position: i + 1,
       queuedAt: r.queuedAt,
-      ...(r.status === 'retrying' && r.retryAt ? { retryAt: r.retryAt, reason: r.retryReason ?? undefined, attempt: r.attempt, maxAttempts: MAX_ATTEMPTS } : {}),
+      ...(r.status === 'retrying' && r.retryAt ? { retryAt: r.retryAt, reason: r.retryReason ?? undefined, attempt: r.attempt, maxAttempts: MAX_ATTEMPTS, failureKind: r.failureKind === 'ours' ? 'ours' : 'store' } : {}),
       ...(r.status === 'running' && r.step
         ? {
             step: r.step,
@@ -41,6 +47,7 @@ export async function getStatus(): Promise<Status> {
           finishedAt: lastRun.finishedAt,
           error: lastRun.status === 'failed' ? firstLine(lastRun.error) : null,
           ...(lastRun.status === 'failed' && lastRun.failedStep ? { failedStep: lastRun.failedStep } : {}),
+          ...(failureKind ? { failureKind } : {}),
           briefId: lastRun.briefId,
           ...(lastRun.manualRead ? { needsManualRead: true, ...(lastRun.manualReadInfo ? { manualRead: lastRun.manualReadInfo } : {}) } : {}),
         }
@@ -49,6 +56,7 @@ export async function getStatus(): Promise<Status> {
       ? { id: latest.id, weekOf: latest.weekOf, greenLight: latest.greenLight, createdAt: latest.createdAt, competitorCount: latest.competitors.length }
       : null,
     totalBriefs,
+    ...(queuePaused ? { queuePaused } : {}),
     contactEmail: CONTACT_EMAIL,
   };
 }

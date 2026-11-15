@@ -24,6 +24,8 @@ export interface QueueItem {
   attempt?: number;
   /** Total tries before the store is recorded as unverified (status 'retrying' only). */
   maxAttempts?: number;
+  /** status 'retrying': 'ours' = waiting out a problem on our side (doesn't use an attempt); 'store' = the store asked us to wait. */
+  failureKind?: 'ours' | 'store';
   /** status 'running' only: the step in progress (see lib/run-steps.ts). */
   step?: RunStep;
   /** When that step began (ISO). */
@@ -51,6 +53,12 @@ export interface Status {
     error: string | null;
     /** The step a failed run stopped at. */
     failedStep?: RunStep;
+    /**
+     * Whose fault it was: 'ours' (credentials, quota, database, our model) or
+     * 'store' (refused, unreadable, not a store). Only 'ours' gets a banner.
+     * Absent on a clean success.
+     */
+    failureKind?: 'ours' | 'store';
     briefId: string | null;
     /** The store has no readable catalogue: show the "request by email" option (see contactEmail). */
     needsManualRead?: boolean;
@@ -65,6 +73,8 @@ export interface Status {
   } | null;
   lastBrief: { id: string; weekOf: string; greenLight: boolean; createdAt: string; competitorCount: number } | null;
   totalBriefs: number;
+  /** Set while the queue is paused after a failure on our side: nothing starts until `until`. */
+  queuePaused?: { until: string; reason: string };
   /** Where users request a manual read of a store we can't read automatically. */
   contactEmail?: string;
 }

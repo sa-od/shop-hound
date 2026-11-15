@@ -117,3 +117,15 @@ test('"this week" is corrected when the comparison is under a week', async () =>
   assert.equal(notAWeek('No price changes this week.', v('2026-11-06', 8)), 'No price changes this week.'); // a real week: untouched
   assert.equal(notAWeek('Re-checked weekly.', v('2026-11-13', 1)), 'Re-checked weekly.');
 });
+
+test('products listed at $0 are left out of price figures and counted as unpriced (lunchly/drinkprime)', () => {
+  const c = summarizeCatalog([p('a', 0), p('b', 0), p('c', 30), p('d', 45)])!;
+  assert.equal(c.productCount, 4);
+  assert.equal(c.unpriced, 2);
+  assert.deepEqual(c.price, { min: 30, median: 37.5, max: 45 });
+  assert.equal(c.cheapest[0].price, 30);
+  const all = summarizeCatalog([p('a', 0), p('b', 0)])!;
+  assert.equal(all.unpriced, 2);
+  assert.equal(all.price.max, 0);
+  assert.equal(summarizeCatalog([p('a', 5)])!.unpriced, undefined);
+});
