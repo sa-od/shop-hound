@@ -93,7 +93,7 @@ export function RunsTable({ runs, currentId }: { runs: RunSummary[]; currentId?:
                   {f.label}
                 </th>
               ))}
-              <th scope="col" className="px-4 py-2.5 text-right font-semibold">Audit</th>
+              <th scope="col" className="px-4 py-2.5 text-right font-semibold">Checks</th>
             </tr>
           </thead>
           <tbody>

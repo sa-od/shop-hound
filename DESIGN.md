@@ -202,7 +202,7 @@ A near-neutral shelf palette with two reserved retail signals (markdown yellow, 
 ### Hierarchy
 - **Display** (Barlow Condensed 800, 36px; 32px on phones; line-height 1.05, tight tracking): the week title ("Week of …") and page titles.
 - **Figure** (Barlow Condensed 800, 38px, line-height 1): the new price on a ticket. Stickers use the same cut at 16px; action numbers at 15px.
-- **Headline** (Barlow Condensed 800, 26px; 22px for card-level section titles): "Changes by store", "Enkrypt AI audit", "More from the analyst". Store names use 22px at 700.
+- **Headline** (Barlow Condensed 800, 26px; 22px for card-level section titles): "Store data", "How this brief was checked", "More from the analyst". Store names use 22px at 700.
 - **Title** (Barlow Condensed 700, 20px): in-card section heads such as "What to do", "Movements", "Biggest price moves"; also markdown h2/h3 in briefs.
 - **Body lead** (Barlow 400, 16px, line-height 1.625, max 70ch): the executive summary and first-use copy.
 - **Body** (Barlow 400–600, 14px): table cells, product rows, recommendations, form labels (600). Metadata drops to 12–13px in ink-3.
@@ -279,7 +279,7 @@ Card-stock tables with a 1px edge and 8px corners. Headers are the 11px uppercas
 Product-change lists: name (medium weight, external-link icon fades in on hover) with a 12px ink-3 detail line on the left, the figure right-aligned semibold on the right (red when it is a cut), hairline-divided.
 
 ### Trust and Tracking Lines
-One quiet 12px ink-2 line with a 14px shield (green or amber) or calendar icon, sitting under the right-column card: the audit verdict links to the audit; the tracking line states when the set is next checked. They never become cards or banners unless the audit failed.
+One quiet 12px ink-2 line with a 14px shield (green or amber) or calendar icon, sitting under the right-column card. The trust line reads "Verified · N of M stores checked · How it was checked" (or "Didn’t pass the checks · …", or "No store data to verify") and links to the brief's "How this brief was checked" section; no vendor names. The tracking line states when the set is next checked. They never become cards or banners unless the audit failed.
 
 ## Do's and Don'ts
 

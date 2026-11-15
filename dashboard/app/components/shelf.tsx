@@ -63,7 +63,7 @@ export function AuditTag({ passed }: { passed: boolean }) {
   );
 }
 
-/** One quiet line: the Enkrypt verdict, linking to the full audit. */
+/** One quiet line: whether the brief passed its checks, linking to how it was checked. */
 export function TrustLine({ brief }: { brief: BriefSummary }) {
   const checked = brief.competitors.filter((c) => c.status !== "unverified").length;
   const Icon = brief.greenLight ? ShieldCheck : ShieldAlert;
@@ -75,8 +75,8 @@ export function TrustLine({ brief }: { brief: BriefSummary }) {
       <Icon size={14} className={checked === 0 ? "text-ink-3" : brief.greenLight ? "text-ok" : "text-warn"} />
       {checked === 0
         ? "No store data to verify"
-        : `${brief.greenLight ? "Verified by Enkrypt AI" : "Did not pass the Enkrypt audit"} · ${checked} of ${brief.competitors.length} stores checked`}{" "}
-      · Audit
+        : `${brief.greenLight ? "Verified" : "Didn’t pass the checks"} · ${checked} of ${brief.competitors.length} stores checked`}{" "}
+      · How it was checked
     </Link>
   );
 }

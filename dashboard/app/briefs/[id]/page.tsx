@@ -149,17 +149,30 @@ function notesFor(byStore: Map<string, string>, domain: string): string | null {
 function AuditPanel({ brief }: { brief: BriefDetail }) {
   const warnings = brief.safety.warnings ?? [];
   const checks = [
-    { label: "Grounding", what: "The data matches the scraped catalogs", v: brief.grounding, ok: "All claims map to verified data" },
-    { label: "Safety", what: "The written brief", v: brief.safety, ok: "No bias or policy violations" },
+    {
+      label: "Facts",
+      what: "Every number and product in the brief matched against the catalogs we read",
+      v: brief.grounding,
+      ok: "Every claim matches the store data",
+    },
+    {
+      label: "Policy",
+      what: "The written brief checked against our compliance policy",
+      v: brief.safety,
+      ok: "Nothing against the policy",
+    },
   ];
   return (
     <Card className="scroll-mt-20">
       <h2 id="audit" className="scroll-mt-20 font-cond text-[22px] font-extrabold tracking-tight">
-        Enkrypt AI audit
+        How this brief was checked
       </h2>
+      <p className="mt-1 text-[13px] text-ink-2">
+        Store pages were screened for hidden instructions before the AI read them. Then the brief was checked twice before it reached you:
+      </p>
       {!brief.greenLight && (
         <p role="status" className="mt-2 text-sm font-semibold text-warn">
-          This brief didn’t pass the Enkrypt audit. Read it with care.
+          This brief didn’t pass the checks. Read it with care.
         </p>
       )}
       <dl className="mt-3 grid divide-y divide-[#eceef1] border-y border-[#eceef1] sm:grid-cols-2 sm:divide-x sm:divide-y-0">
@@ -187,7 +200,6 @@ function AuditPanel({ brief }: { brief: BriefDetail }) {
           </ul>
         </div>
       )}
-      {brief.safety.method && <p className="mt-3 text-xs text-ink-3">Method: {brief.safety.method}</p>}
     </Card>
   );
 }

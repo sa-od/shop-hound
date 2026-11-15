@@ -207,7 +207,7 @@ export function readableViolation(text: string | undefined): string | undefined 
   if (!text) return text;
   if (/[{}]|\bError:|failed: \d{3}/.test(text)) {
     const check = /grounding/i.test(text) ? 'grounding check' : /safety|bias|policy/i.test(text) ? 'safety check' : 'audit';
-    return `The ${check} couldn’t run this time (Enkrypt returned an error), so this brief isn’t verified.`;
+    return `The ${check} couldn’t run this time, so this brief isn’t verified.`;
   }
   return text;
 }
