@@ -1,7 +1,7 @@
 import { ChevronDown } from "lucide-react";
 import dynamicImport from "next/dynamic";
 import type { BriefDetail } from "@/lib/api";
-import { diffFor, formatPct, formatPrice, isPartialRead, productCountText, sourceLabel, priceTickets, slug, type MovementRow, calendarDay } from "@/lib/brief";
+import { diffFor, formatPct, formatMoney, isPartialRead, productCountText, sourceLabel, priceTickets, slug, type MovementRow, calendarDay } from "@/lib/brief";
 import { CatalogSnapshot } from "./CatalogSnapshot";
 import { LastRead } from "./LastRead";
 import { LocalTime } from "./LocalTime";
@@ -59,7 +59,11 @@ export function StoreSection({
   storePage?: boolean;
 }) {
   const d = diffFor(brief, row.competitor);
-  const tickets = priceTickets(brief).filter((t) => t.competitor === row.competitor);
+  // The catalogue's currency when we have it; plain figures otherwise (the diff carries none).
+  const money = (n: number) => formatMoney(n, row.catalog?.currency);
+  const tickets = priceTickets(brief)
+    .filter((t) => t.competitor === row.competitor)
+    .map((t) => ({ ...t, currency: row.catalog?.currency }));
 
   return (
     <Card className="scroll-mt-20">
@@ -176,8 +180,8 @@ export function StoreSection({
                           key={t.url}
                           title={t.title}
                           href={t.url}
-                          detail={<>was <span className="line-through">{formatPrice(t.oldPrice)}</span></>}
-                          value={`${formatPrice(t.newPrice)} · ${formatPct(t.changePct)}`}
+                          detail={<>was <span className="line-through">{money(t.oldPrice)}</span></>}
+                          value={`${money(t.newPrice)} · ${formatPct(t.changePct)}`}
                           valueClass={t.changePct < 0 ? "text-cut" : ""}
                         />
                       )}
@@ -196,8 +200,8 @@ export function StoreSection({
                         key={p.productId}
                         title={p.title}
                         href={p.url}
-                        detail={p.closestExisting ? `Sits next to ${p.closestExisting.title} (${formatPrice(p.closestExisting.price)})` : undefined}
-                        value={formatPrice(p.price)}
+                        detail={p.closestExisting ? `Sits next to ${p.closestExisting.title} (${money(p.closestExisting.price)})` : undefined}
+                        value={money(p.price)}
                       />
                     )}
                   />
@@ -216,7 +220,7 @@ export function StoreSection({
                         value={
                           <>
                             <span className="font-normal text-ink-3">last price </span>
-                            {formatPrice(p.price)}
+                            {money(p.price)}
                           </>
                         }
                       />

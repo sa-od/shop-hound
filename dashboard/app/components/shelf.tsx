@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { ExternalLink, ShieldAlert, ShieldCheck } from "lucide-react";
 import type { BriefSummary } from "@/lib/api";
-import { formatPct, formatPrice, type PriceTicket, isWithheld } from "@/lib/brief";
+import { formatPct, formatMoney, type PriceTicket, isWithheld } from "@/lib/brief";
 
 /** A price change as a shelf-edge ticket. The yellow sticker marks cuts only. */
 export function Ticket({ t, showStore = true }: { t: PriceTicket; showStore?: boolean }) {
@@ -23,10 +23,10 @@ export function Ticket({ t, showStore = true }: { t: PriceTicket; showStore?: bo
       <span className="line-clamp-2 min-h-[34px] pr-8 text-[13px] font-semibold leading-[1.3] group-hover:underline">{t.title}</span>
       {showStore && <span className="mt-0.5 truncate text-[11px] text-ink-3">{t.competitor}</span>}
       <span className="mt-2.5 text-xs text-ink-3">
-        was <span className="line-through">{formatPrice(t.oldPrice)}</span>
+        was <span className="line-through">{formatMoney(t.oldPrice, t.currency)}</span>
       </span>
       <span className={`font-cond text-[38px] font-extrabold leading-none ${cut ? "text-cut" : "text-ink"}`}>
-        {formatPrice(t.newPrice)}
+        {formatMoney(t.newPrice, t.currency)}
       </span>
     </a>
   );

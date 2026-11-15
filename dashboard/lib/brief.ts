@@ -76,6 +76,8 @@ export interface PriceTicket {
   oldPrice: number;
   newPrice: number;
   changePct: number;
+  /** The store's currency when known (catalog summary or change); none is invented. */
+  currency?: string;
 }
 
 /** Every price change in the brief, biggest move first. */

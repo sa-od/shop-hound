@@ -109,7 +109,7 @@ export function ThisWeekView({ data, watched }: { data: ThisWeekData; watched: W
 
   const tickets: PriceTicket[] = rowsOf(of("price_cut", "price_rise"))
     .filter(({ p }) => p.oldPrice !== undefined && p.newPrice !== undefined && p.pct !== undefined)
-    .map(({ c, p }) => ({ competitor: c.store, title: p.title, url: p.url, oldPrice: p.oldPrice!, newPrice: p.newPrice!, changePct: p.pct! }))
+    .map(({ c, p }) => ({ competitor: c.store, title: p.title, url: p.url, oldPrice: p.oldPrice!, newPrice: p.newPrice!, changePct: p.pct!, currency: c.currency }))
     .sort((a, b) => Math.abs(b.changePct) - Math.abs(a.changePct));
   const added = rowsOf(of("new"));
   const removed = rowsOf(of("removed"));
