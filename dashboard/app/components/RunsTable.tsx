@@ -63,7 +63,7 @@ export function RunsTable({ runs, currentId }: { runs: RunSummary[]; currentId?:
                   {r.id === currentId && <span className="font-semibold text-ink"> · Viewing</span>}
                 </div>
               </div>
-              <AuditTag passed={r.greenLight} />
+              <AuditTag passed={r.greenLight} withheld={r.withheld} />
             </div>
             {r.status === "first_snapshot" ? (
               <p className="mt-2 text-[13px] text-ink-3">Baseline saved. Changes show from the next run.</p>
@@ -124,7 +124,7 @@ export function RunsTable({ runs, currentId }: { runs: RunSummary[]; currentId?:
                   ))
                 )}
                 <td className="px-4 py-2.5 text-right">
-                  <AuditTag passed={r.greenLight} />
+                  <AuditTag passed={r.greenLight} withheld={r.withheld} />
                 </td>
               </tr>
             ))}

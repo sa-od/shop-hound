@@ -174,7 +174,9 @@ function AuditPanel({ brief }: { brief: BriefDetail }) {
       </p>
       {!brief.greenLight && (
         <p role="status" className="mt-2 text-sm font-semibold text-warn">
-          This brief didn’t pass the checks. Read it with care.
+          {checks.some((c) => !c.v.enabled)
+            ? "Not every check could run, so this brief isn’t verified. Read it with care."
+            : "This brief didn’t pass the checks. Read it with care."}
         </p>
       )}
       <dl className="mt-3 grid divide-y divide-[#eceef1] border-y border-[#eceef1] sm:grid-cols-2 sm:divide-x sm:divide-y-0">
@@ -184,11 +186,13 @@ function AuditPanel({ brief }: { brief: BriefDetail }) {
               <span className="text-sm font-semibold">{c.label}</span>
               <span className={`inline-flex items-center gap-1 text-xs font-semibold ${c.v.greenLight ? "text-ok" : "text-warn"}`}>
                 {c.v.greenLight ? <ShieldCheck size={14} /> : <ShieldAlert size={14} />}
-                {c.v.greenLight ? "Pass" : "Fail"}
+                {c.v.greenLight ? "Pass" : c.v.enabled ? "Fail" : "Couldn’t run"}
               </span>
             </dt>
             <dd className="mt-0.5 text-xs text-ink-3">{c.what}</dd>
-            <dd className="mt-1.5 text-[13px] text-ink-2">{readableViolation(c.v.violations[0]) ?? c.ok}</dd>
+            <dd className="mt-1.5 text-[13px] text-ink-2">
+              {c.v.enabled ? (readableViolation(c.v.violations[0]) ?? c.ok) : "This check couldn’t run, so this brief isn’t verified."}
+            </dd>
           </div>
         ))}
       </dl>

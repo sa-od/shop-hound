@@ -55,10 +55,12 @@ export function StatusTag({ status }: { status: string }) {
   return <span className={`inline-block whitespace-nowrap rounded-full px-2.5 py-1 text-[11px] font-semibold leading-none ${s.cls}`}>{s.label}</span>;
 }
 
-export function AuditTag({ passed }: { passed: boolean }) {
+/** A run's checks: passed, didn't pass, or withheld (the input check blocked the data; nothing was written). */
+export function AuditTag({ passed, withheld = false }: { passed: boolean; withheld?: boolean }) {
+  const tone = passed ? "bg-ok-soft text-ok" : withheld ? "bg-shelf text-ink-2" : "bg-warn-soft text-warn";
   return (
-    <span className={`inline-block whitespace-nowrap rounded-full px-2.5 py-1 text-[11px] font-semibold leading-none ${passed ? "bg-ok-soft text-ok" : "bg-warn-soft text-warn"}`}>
-      {passed ? "Passed" : "Didn’t pass"}
+    <span className={`inline-block whitespace-nowrap rounded-full px-2.5 py-1 text-[11px] font-semibold leading-none ${tone}`}>
+      {passed ? "Passed" : withheld ? "Withheld" : "Didn’t pass"}
     </span>
   );
 }
@@ -68,6 +70,7 @@ export function TrustLine({ brief }: { brief: BriefSummary }) {
   const checked = brief.competitors.filter((c) => c.status !== "unverified").length;
   const Icon = brief.greenLight ? ShieldCheck : ShieldAlert;
   const withheld = isWithheld(brief);
+  const couldNotRun = !withheld && (!brief.grounding.enabled || !brief.safety.enabled);
   return (
     <Link
       href={`/briefs/${brief.id}#audit`}
@@ -78,6 +81,8 @@ export function TrustLine({ brief }: { brief: BriefSummary }) {
         ? "Withheld: store data failed the input check"
         : checked === 0
         ? "No store data to verify"
+        : couldNotRun
+        ? `Not verified: the checks couldn’t run · ${checked} of ${brief.competitors.length} stores read`
         : `${brief.greenLight ? "Verified" : "Didn’t pass the checks"} · ${checked} of ${brief.competitors.length} stores checked`}{" "}
       · How it was checked
     </Link>

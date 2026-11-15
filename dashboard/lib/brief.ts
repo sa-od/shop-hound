@@ -237,7 +237,7 @@ export function calendarDay(d: string | undefined | null): string {
   return Number.isNaN(t.getTime()) ? d : t.toLocaleString("en-US", { month: "short", day: "numeric", timeZone: "UTC" });
 }
 
-type VerdictLike = { greenLight: boolean; violations: string[]; detail?: Record<string, unknown> };
+type VerdictLike = { greenLight: boolean; enabled?: boolean; violations: string[]; detail?: Record<string, unknown> };
 
 /**
  * Withheld: the input check blocked the store data (e.g. hidden instructions),
@@ -246,5 +246,5 @@ type VerdictLike = { greenLight: boolean; violations: string[]; detail?: Record<
  */
 export function isWithheld(b: { grounding: VerdictLike; safety: VerdictLike }): boolean {
   const skipped = b.safety.detail?.skipped === true || b.safety.violations.some((v) => /audit skipped|blocked the input upstream/i.test(v));
-  return !b.grounding.greenLight && skipped;
+  return b.grounding.enabled !== false && !b.grounding.greenLight && skipped;
 }
