@@ -60,18 +60,6 @@ test('only full catalogues are compared week over week', async () => {
   assert.equal(isFullCatalog('shopify', true), true);
 });
 
-test('our own contact email is masked for the PII detector; other emails are not', async () => {
-  const { maskCompetitorDomains } = await import('./enkrypt');
-  const { CONTACT_EMAIL } = await import('./contact');
-  const diff = JSON.stringify({ diffs: [{ competitor: 'bombas.com' }] });
-  const out = maskCompetitorDomains(`Email ${CONTACT_EMAIL.toUpperCase()} for bombas.com. Link: to=${encodeURIComponent(CONTACT_EMAIL)}. Leak: someone@else.com`, diff);
-  assert.ok(!out.includes(encodeURIComponent(CONTACT_EMAIL)));
-  assert.ok(!out.toLowerCase().includes(CONTACT_EMAIL.toLowerCase()));
-  assert.match(out, /\[our contact address\]/);
-  assert.match(out, /someone@else\.com/);
-  assert.match(out, /Competitor A/);
-});
-
 test('checkout add-ons are left out of catalogue figures (allbirds "Free Returns Coverage")', async () => {
   const { isServiceAddOn } = await import('./catalog');
   const addOn = { ...p('returns', 0.8), title: 'Free Returns Coverage', productType: 'return,package_protection' };
@@ -93,7 +81,7 @@ test('in-stock share keeps one decimal: 311 of 312 is 99.7, not 100', () => {
 });
 
 test('quoted names pair up in order: short quotes no longer produce a fake product', async () => {
-  const { verifyProductGrounding } = await import('./enkrypt');
+  const { verifyProductGrounding } = await import('./guardrails');
   const diff = JSON.stringify({ diffs: [{ competitor: 'allbirds.com', newSkus: [{ title: "Men's Tree Runners", price: 98 }], removedSkus: [], priceChanges: [], titleChanges: [], catalog: { productTypes: [{ name: 'Shoes', count: 271 }, { name: 'Uncategorised', count: 37 }] } }] });
   const brief = 'The catalogue is primarily "Shoes" (271), followed by "Uncategorised" (37). New: "Men\'s Tree Runners" at $98.';
   assert.deepEqual(verifyProductGrounding(brief, diff), []);

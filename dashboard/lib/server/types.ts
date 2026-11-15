@@ -130,12 +130,12 @@ export const structuredDiffSchema = z.object({
 });
 export type StructuredDiff = z.infer<typeof structuredDiffSchema>;
 
-// ── Guardrail verdicts (Enkrypt AI sandwich) ──
+// ── Guardrail verdicts (in-house checks, see guardrails.ts) ──
 
 export const guardrailVerdictSchema = z.object({
   checkpoint: z.enum(['grounding', 'safety']),
   greenLight: z.boolean(),
-  enkryptEnabled: z.boolean(), // false when ENKRYPT_API_KEY is missing (never a green light)
+  enabled: z.boolean(), // false when a check couldn't run (then never a green light)
   violations: z.array(z.string()),
   warnings: z.array(z.string()).optional(), // recorded, shown, never blocking
   detail: z.record(z.string(), z.unknown()).optional(),

@@ -28,9 +28,31 @@ export interface CompetitorSummary {
 
 export interface Verdict {
   greenLight: boolean;
+  /** false when the check couldn't run (then never green). Always present on read (see normalizeVerdict). */
+  enabled: boolean;
   violations: string[];
   warnings?: string[];
   method?: string | null;
+}
+
+/** A verdict as stored: briefs from before the in-house guardrails may carry `enkryptEnabled`, or neither flag. */
+type StoredVerdict = Omit<Verdict, 'enabled'> & { enabled?: boolean; enkryptEnabled?: boolean };
+
+const COULD_NOT_RUN = /ENKRYPT_API_KEY not set|unavailable|could not run|UNAUDITED/i;
+
+/**
+ * Normalise a stored verdict on READ, so the UI only ever sees `enabled`:
+ * `enabled`, else the old `enkryptEnabled`, else inferred — a check that
+ * couldn't run always said so in its violations. Pure.
+ */
+export function normalizeVerdict(v: StoredVerdict | null | undefined): Verdict {
+  const { enkryptEnabled, enabled, ...rest } = v ?? { greenLight: false, violations: [] };
+  return {
+    ...rest,
+    greenLight: rest.greenLight ?? false,
+    violations: rest.violations ?? [],
+    enabled: enabled ?? enkryptEnabled ?? !(rest.violations ?? []).some(m => COULD_NOT_RUN.test(m)),
+  };
 }
 
 /** Why a brief ran: a user added (or re-ran) the store, or the weekly re-check. Older briefs lack it. */
@@ -62,8 +84,8 @@ interface BriefDoc {
   greenLight: boolean;
   briefMarkdown: string;
   competitors: CompetitorSummary[];
-  grounding: Verdict;
-  safety: Verdict;
+  grounding: StoredVerdict;
+  safety: StoredVerdict;
   diff: StructuredDiff;
 }
 
@@ -77,8 +99,8 @@ function toSummary(d: Omit<BriefDoc, 'briefMarkdown' | 'diff'>): BriefSummary {
     ...(d.trigger ? { trigger: d.trigger } : {}),
     greenLight: d.greenLight,
     competitors: d.competitors,
-    grounding: d.grounding,
-    safety: d.safety,
+    grounding: normalizeVerdict(d.grounding),
+    safety: normalizeVerdict(d.safety),
   };
 }
 
@@ -181,6 +203,8 @@ export interface StoreSummary {
   complete?: boolean;
   /** The latest brief is a manual-read case. */
   needsManualRead?: boolean;
+  /** The latest brief was withheld: its data failed the grounding guardrail, so no brief was written. */
+  withheld?: boolean;
   tracking: import('./tracking').TrackingStatus;
 }
 
@@ -202,6 +226,8 @@ export interface RunSummary {
   newSkus: number;
   removed: number;
   titleChanges: number;
+  /** Withheld: the data failed the grounding guardrail, so the analyst never ran. */
+  withheld?: boolean;
 }
 
 /** What the store and run lists need from a brief: counts only, no brief text or product lists. */
@@ -209,6 +235,24 @@ type SlimBrief = Pick<BriefDoc, '_id' | 'competitorKey' | 'createdAt' | 'greenLi
   competitors: Pick<CompetitorSummary, 'competitor' | 'status' | 'productCount' | 'complete' | 'newSkus' | 'priceChanges' | 'titleChanges' | 'needsManualRead'>[];
   diffs: { competitor: string; previousProductCount?: number; previousSnapshotDate?: string | null; removedCount: number; catalogCount?: number }[];
   readable: boolean;
+  withheld: boolean;
+};
+
+/**
+ * Withheld = grounding failed AND the safety audit was a skip. Stored verdicts
+ * keep no `detail`, so the skip is recognised by the message the pipeline
+ * writes ("audit skipped — grounding guardrail blocked the input upstream…"),
+ * which older briefs carry too.
+ */
+const WITHHELD_EXPR = {
+  $and: [
+    { $eq: ['$grounding.greenLight', false] },
+    {
+      $anyElementTrue: [
+        { $map: { input: { $ifNull: ['$safety.violations', []] }, as: 'v', in: { $regexMatch: { input: '$$v', regex: 'audit skipped|blocked the input upstream', options: 'i' } } } },
+      ],
+    },
+  ],
 };
 
 const READABLE_EXPR = { $anyElementTrue: [{ $map: { input: '$competitors', as: 'c', in: { $in: ['$$c.status', ['verified', 'first_snapshot']] } } }] };
@@ -239,6 +283,7 @@ const SLIM_STAGE = {
       },
     },
     readable: READABLE_EXPR,
+    withheld: WITHHELD_EXPR,
   },
 } as const;
 
@@ -317,6 +362,7 @@ export async function listStores(): Promise<StoreSummary[]> {
       ...(change?.since ? { deltaSince: change.since } : {}),
       ...(last && !last.complete ? { complete: false } : {}),
       ...(latest.competitors.length > 0 && latest.competitors.every(c => c.needsManualRead) ? { needsManualRead: true } : {}),
+      ...(latest.withheld ? { withheld: true } : {}),
       tracking: tracking.get(key) ?? { tracked: false, trackedUntil: null, nextCheck: null },
     };
   });
@@ -340,6 +386,7 @@ function toRunSummary(d: SlimBrief): RunSummary {
     newSkus: sum('newSkus'),
     removed: d.diffs.filter(x => read.some(c => c.competitor === x.competitor)).reduce((n, x) => n + x.removedCount, 0),
     titleChanges: sum('titleChanges'),
+    ...(d.withheld ? { withheld: true } : {}),
   };
 }
 

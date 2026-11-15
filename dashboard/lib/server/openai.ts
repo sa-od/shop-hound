@@ -42,6 +42,9 @@ function provider() {
     name: 'openai',
     baseURL: process.env.OPENAI_BASE_URL ?? 'https://api.openai.com/v1',
     apiKey,
+    // Structured output (the guardrails' verdicts) uses OpenAI's json_schema
+    // response format: the schema is enforced by the API, not just requested.
+    supportsStructuredOutputs: true,
   });
   return _provider;
 }

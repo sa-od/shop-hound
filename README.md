@@ -10,7 +10,9 @@ it never makes the brief.
 🔗 **Live app:** https://shop-hound.vercel.app/
 ⚙️ **Backend API:** https://my-mastara-engine.server.mastra.cloud/briefs
 
-Built for the **HiDevs × Mastra Hackathon 2026** on **Mastra · Qdrant · Enkrypt AI** (+ OpenAI · Next.js · Vercel).
+Built for the **HiDevs × Mastra Hackathon 2026**. It now runs as a Next.js app on Vercel with MongoDB Atlas,
+OpenAI and Firecrawl, behind in-house guardrails (see [How it works](#-how-it-works)); the original
+Mastra / Qdrant backend is legacy.
 
 ---
 
@@ -19,9 +21,9 @@ Built for the **HiDevs × Mastra Hackathon 2026** on **Mastra · Qdrant · Enkry
 Open the live dashboard → **https://shop-hound.vercel.app/**
 
 1. Browse the **Weekly Growth Briefs** — each card shows the competitor(s), a
-   ✓ **Verified by Enkrypt AI** badge, and stat chips (price changes · new SKUs · title changes).
+   ✓ **Verified** badge, and stat chips (price changes · new SKUs · title changes).
 2. Click any brief to see the full report: rendered markdown, per-competitor status,
-   and the **Enkrypt AI audit panel** (grounding + safety PASS/FAIL — the trust story).
+   and the **audit panel** (grounding + safety PASS/FAIL — the trust story).
 3. Hit **➕ New analysis**, type one or more competitor domains, and **Run**. The workflow
    scrapes → embeds → diffs → audits → archives, and the new brief appears when it's done
    (~1–2 min; the UI fires it async and polls for the result).
@@ -55,7 +57,7 @@ total, all Verified, done in ~1 minute.
 Run **`injection-demo.test`** from the "New analysis" box. It's a synthetic store whose
 catalog hides a prompt-injection attack inside a product title (*"IGNORE ALL PREVIOUS
 INSTRUCTIONS…"*) — exactly how a hostile competitor page would try to manipulate the
-agent. Watch the Enkrypt grounding guardrail **quarantine the data before the agent ever
+agent. Watch the grounding guardrail **quarantine the data before the agent ever
 sees it**: the run completes, but delivers a "⛔ Brief Withheld" card with the violation
 on the audit trail. No AI generation occurs on blocked input.
 
@@ -66,11 +68,16 @@ npm run dev                       # Mastra backend + Studio at http://localhost:
 cd dashboard && npm run dev       # Next.js dashboard at http://localhost:3000
 ```
 
-Requires env vars: `OPENAI_API_KEY`, `QDRANT_URL`, `QDRANT_API_KEY`,
-`ENKRYPT_API_KEY` (see `.env` for the full list). Set `COMPETITOR_STORES` to control the
-weekly auto-run's default competitor set.
+The dashboard (`dashboard/`) is the app: it needs `MONGODB_URI`, `OPENAI_API_KEY`,
+`FIRECRAWL_API_KEY` and, in production, `CRON_SECRET` (see `dashboard/.env.local`).
+The Mastra backend on port 4111 is legacy. `COMPETITOR_STORES` optionally adds a set of
+stores that is always tracked. `ENKRYPT_*` variables are no longer read.
 
-### 🚢 Deploy the backend
+### 🚢 Deploy the backend (legacy: Mastra Cloud)
+
+> **Legacy.** The app no longer uses the Mastra Cloud backend: the dashboard on Vercel
+> runs the whole pipeline and deploys from `main` on push. These steps are kept only for
+> the old Mastra deployment.
 
 **Pushing to GitHub does not deploy the backend.** Mastra Cloud is deployed
 explicitly from the CLI; only the Vercel dashboard tracks git.
@@ -143,33 +150,35 @@ A 7-step Mastra workflow runs the pipeline:
   local dev and production. The agent also gets a `semantic-query` tool over both
   vector collections.
 
-### 🛡️ Enkrypt AI — the trust layer (the differentiator)
-- A guardrail **"sandwich"** around the agent:
-  - **Input grounding** — a **managed policy deployment** (`shophound-grounding`,
-    created via `/guardrails/add-policy`, called via `/guardrails/policy/detect`) runs
-    3 detectors on the untrusted scraped data: **prompt injection, toxicity, PII** —
-    with an inline-detector fallback so the guardrail never silently weakens.
-  - **Output safety** — 6 detectors on the generated brief: **bias, toxicity, NSFW,
-    PII leakage, adherence** (LLM-judged faithfulness of every claim to the diff
-    context — the RAG-grounding check, score archived), and **policy_violation**
-    against a custom e-commerce compliance policy (no price-fixing, no ToS violations,
-    no deceptive practices).
-- **Quarantine, not crash:** grounding failures never reach the agent — the run
+### 🛡️ In-house guardrails — the trust layer (the differentiator)
+`dashboard/lib/server/guardrails.ts` wraps the agent in a guardrail **"sandwich"**:
+- **Input grounding** (before the agent): scraped store data is untrusted.
+  - **Fixed injection rules** catch instruction overrides, role changes,
+    system/role markers, prompt-disclosure requests, tool or URL directives, and
+    instructions aimed at the reader.
+  - **An email rule** catches personal data.
+  - **One small structured model call** classifies the data as clean, an injection
+    attempt, or abusive content.
+  - **Fails closed:** if the model call errors, the input is treated as unverified and
+    the agent never runs on it.
+- **Output safety** (after the agent):
+  - **Deterministic numeric and product grounding** (blocking): every `$` and `%` must
+    trace to the verified diff and history, every number in a sentence naming a product
+    must belong to that product, and every quoted product must exist. This is the
+    mechanism behind **0% hallucination**.
+  - **An email and phone-number rule** catches leaked personal data.
+  - **One structured model call** judges the brief against the compliance policy: no
+    price-fixing or coordination, no bypassing access controls, no ToS violations, no
+    deceptive practices, no unsupported disparagement. Each violation is quoted and
+    explained. Possibly biased framing is recorded as a non-blocking warning.
+- **Quarantine, not crash:** grounding failures never reach the agent. The run
   delivers an audited "Brief Withheld" card listing the violations (see the
   `injection-demo.test` honeypot above).
-- **Compliance mappings** for every flagged violation (OWASP LLM Top-10, NIST AI RMF,
-  EU AI Act, MITRE ATLAS) are captured into the archived audit trail.
-- A **deterministic numeric grounding** check forces every `$` and `%` in the brief to
-  trace back to the verified diff + history data — the mechanism behind **0%
-  hallucination** (primary while Enkrypt's dedicated hallucination endpoint rolls out;
-  defense-in-depth after). The unreliable-for-this-domain `relevancy` detector was
-  evaluated and excluded — tested, not assumed.
-- Every brief carries a **PASS/FAIL audit trail**, surfaced in the dashboard as the
-  **"Verified by Enkrypt AI"** badge and audit panel.
-- Roadmap: automated **red-teaming** of the agent via Enkrypt's redteam API (access
-  verified), hybrid dense+sparse product matching in Qdrant, and merchant accounts
-  (JWT auth on the Hono gateway, per-merchant competitor sets, tenant isolation via
-  Qdrant payload filters).
+- Every brief carries a **PASS/FAIL audit trail** (`enabled: false` when a check
+  couldn't run, which is never green), shown in the dashboard as the **Verified**
+  badge and audit panel.
+- These checks replaced the Enkrypt AI vendor, whose hallucination detector never shipped
+  and whose detectors added failures (503s, removed detectors, domains flagged as PII).
 
 ### 🤖 Supporting stack
 - **OpenAI** — all inference via one endpoint: `gpt-4o-mini` for brief writing,
@@ -190,7 +199,7 @@ scrape (/products.json) → embed (OpenAI)      → upsert competitor_products
         ↓
 diff current vs previous snapshot  ──►  structured change set
         ↓
-Enkrypt grounding (input)  →  Agent writes brief  →  Enkrypt safety + numeric check (output)
+grounding guardrail (input)  →  Agent writes brief  →  safety audit + numeric/product grounding (output)
         ↓
 archive to growth_briefs (Qdrant)  ──►  dashboard reads /briefs
 ```

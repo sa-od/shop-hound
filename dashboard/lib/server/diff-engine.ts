@@ -150,7 +150,7 @@ function toSummary(p: NormalizedProduct) {
 }
 
 /**
- * Deterministic grounding pre-check (runs before Enkrypt): every number in the
+ * Deterministic grounding pre-check (runs before the grounding guardrail): every number in the
  * diff must map back to the scraped payloads it was derived from.
  */
 export function verifyDiffAgainstPayload(

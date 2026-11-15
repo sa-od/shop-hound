@@ -16,19 +16,19 @@ Shop Hound (shown in the UI as "Growth Briefs") scrapes competitor storefronts, 
 
 ## Positioning
 
-Every brief is built from a deterministic catalog diff and checked by Enkrypt AI before delivery: a grounding check (claims match the verified data) and a safety check (bias, policy, prompt-injection). Competitors whose scrape failed are marked unverified, never invented. This trust layer sets the product apart, but it supports the content rather than being the main point.
+Every brief is built from a deterministic catalog diff and checked by in-house guardrails before delivery: the scraped data is screened for prompt injection (fixed rules plus a model check) before the analyst sees it, and the brief must pass deterministic grounding (every price, percentage and product traces to the verified data) and a policy check (no price-fixing, ToS breaches, deceptive practices or unsupported disparagement; possible bias is a non-blocking warning). Competitors whose scrape failed are marked unverified, never invented. This trust layer sets the product apart, but it supports the content rather than being the main point.
 
 ## Operating Context
 
 - Rhythm: a merchant adds competitor stores one at a time; each add joins a queue and is analysed in order, so they never wait before adding the next. Each store then gets a new brief about weekly for 28 days (see Capabilities). One brief per store per run, labelled by its snapshot date.
 - Analysing one store takes about a minute; non-Shopify stores fall back to Firecrawl extraction, which is slower (several minutes) and best-effort.
-- Week-over-week trends show up in the brief when archived history exists.
+- Trends show up in the brief when archived history exists. Each run is compared with the store's read from about a week earlier (a nearer one while a store is new; the brief states the gap).
 
 ## Capabilities and Constraints
 
 - Next.js 16 App Router + Tailwind v4 app in `dashboard/`; data comes from MongoDB through `dashboard/lib/server/*`.
 - Per competitor data: status (`verified`, `first_snapshot`/baseline, `unverified`), source (`shopify` | `firecrawl`), product count, new SKUs, price changes, title changes. Each brief also stores the full diff with product-level detail (title, URL, old/new price, change %, closest existing product), which the brief page shows. When the backend stores it, each read store also has a catalog summary (product count, price range and median, price bands, stock, product types, brands, cheapest and priciest products); a first check shows it as the store's catalog today. An unread store can carry its last successful read (date, product count).
-- The brief body is generated Markdown with fixed sections: Executive Summary, Competitor Movements, Strategic Recommendations, an optional Week-over-Week Trends, and an appended Data Confidence section.
+- The brief body is generated Markdown with fixed sections: Executive Summary, Competitor Movements, Strategic Recommendations, an optional Trends section, and an appended Data Confidence section.
 - Limits: one store per analysis (`POST /api/run { store }`); at most 10 stores waiting in the queue.
 - Automatic tracking: every store analysed from the dashboard is re-checked about weekly for 28 days after it was last run (running it again restarts the 28 days). A daily job re-checks the stores whose last brief is 7+ days old; a busy day can push one to the next day, so the next check is "on or after" a date. A store that refuses us for now (rate limit or block) is retried in the queue (after about 15 minutes, then an hour; three tries in all) and, if still unread, stays tracked and is tried again daily. A store that can never be read (dead, not a store, bad address) is not tracked. There is no watchlist.
 - Compliance: recommendations must never suggest coordinating or fixing prices with competitors.

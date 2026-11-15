@@ -4,7 +4,7 @@ import { embedProducts, productToEmbeddingText } from './embeddings';
 import { saveSnapshot, getBaselineSnapshot, getLatestSnapshotInfo, isFullCatalog, loadReusableVectors, embeddingTextKey } from './snapshot-store';
 import { summarizeCatalog } from './catalog';
 import { daysBetween, diffSnapshots, verifyDiffAgainstPayload } from './diff-engine';
-import { groundingCheck, safetyAudit, maskCompetitorDomains } from './enkrypt';
+import { groundingCheck, safetyAudit } from './guardrails';
 import { briefsForCompetitors, saveBrief } from './briefs-store';
 import { generateGrowthBrief } from './agent';
 import { detectPlatform } from './platform';
@@ -12,8 +12,8 @@ import { manualRead as manualReadInfo, type ManualRead } from './contact';
 
 /**
  * Competitive Intelligence pipeline — the linear high-integrity run:
- * scrape → embed+snapshot (MongoDB) → deterministic diff → Enkrypt grounding →
- * reasoning agent → Enkrypt safety audit → archive.
+ * scrape → embed+snapshot (MongoDB) → deterministic diff → grounding guardrail →
+ * reasoning agent → safety audit → archive.
  *
  * Plain functions, one after another. Runs inside a single Vercel function
  * invocation (300s on Hobby), so it takes a `deadlineAt` and degrades
@@ -259,22 +259,20 @@ export async function runAnalysis(opts: RunOptions): Promise<RunResult> {
   const diff: StructuredDiff = { weekOf: snapshotDate, diffs, unverified, unverifiedReasons };
   log(`[diff] ${diffs.length} competitors diffed (${unverified.length} unverified)`);
 
-  // ── 4. Grounding guardrail (Enkrypt — input side) ──
-  // Scan BOTH what the agent will see (the diff JSON) and the raw scraped
-  // titles — injection can hide in any untrusted string. (Enkrypt caps at 30k
-  // chars; the diff comes first so agent-bound content is always covered.)
-  // Competitor domains are masked for the detector: its PII check tags bare
-  // domains as emails (reproduced: "pipsnacks.com" → email, with no "@"
-  // anywhere in the payload). A real address keeps its domain and is caught.
+  // ── 4. Grounding guardrail (input side) ──
+  // Screen BOTH what the agent will see (the diff JSON) and the raw scraped
+  // titles — injection can hide in any untrusted string. The rules read all of
+  // it; the model screen reads the first 30k chars, and the diff comes first
+  // so agent-bound content is always covered.
   const scrapedTitles = snapshots.flatMap(s => s.products.map(p => p.title));
   const diffJson = JSON.stringify(diff);
   progress({ step: 'grounding' }); // no detail: it would only repeat the step's label
-  const grounding = await groundingCheck(maskCompetitorDomains(`${diffJson}\n${scrapedTitles.join('\n')}`, diffJson));
+  const grounding = await groundingCheck(`${diffJson}\n${scrapedTitles.join('\n')}`);
   if (groundingErrors.length > 0) {
     grounding.greenLight = false;
     grounding.violations.push(...groundingErrors);
   }
-  if (!grounding.greenLight && grounding.enkryptEnabled) {
+  if (!grounding.greenLight) {
     log(`[grounding] BLOCKED — agent will not run: ${grounding.violations.join('; ')}`);
   }
 
@@ -287,7 +285,7 @@ export async function runAnalysis(opts: RunOptions): Promise<RunResult> {
     brief = [
       '# ⛔ Growth Brief Withheld — Guardrail Block',
       '',
-      "This week's scraped competitor data **failed the Enkrypt AI grounding guardrail** and was",
+      "The scraped competitor data **failed the grounding guardrail** and was",
       'quarantined before it could reach the reasoning agent. No AI generation occurred.',
       '',
       '**Violations detected:**',
@@ -344,7 +342,7 @@ export async function runAnalysis(opts: RunOptions): Promise<RunResult> {
     log(`[generate] brief: ${brief.length} chars`);
   }
 
-  // ── 6. Safety audit (Enkrypt — output side) ──
+  // ── 6. Safety audit (output side) ──
   progress({ step: 'safety' });
   let safety: GuardrailVerdict;
   if (!grounding.greenLight) {
@@ -353,7 +351,7 @@ export async function runAnalysis(opts: RunOptions): Promise<RunResult> {
     safety = {
       checkpoint: 'safety',
       greenLight: false,
-      enkryptEnabled: true,
+      enabled: true,
       violations: ['audit skipped — grounding guardrail blocked the input upstream, agent never ran'],
       detail: { skipped: true },
     };
@@ -361,7 +359,7 @@ export async function runAnalysis(opts: RunOptions): Promise<RunResult> {
     // Audit context = diff + the verified history the agent was shown, so trend
     // numbers audit as grounded. `diffs` stays top-level for the numeric check.
     safety = await safetyAudit(brief, JSON.stringify({ ...diff, history: JSON.parse(history) }));
-    if (!safety.greenLight && safety.enkryptEnabled) {
+    if (!safety.greenLight) {
       log(`[safety] brief FAILED audit: ${safety.violations.join('; ')}`);
     }
   }
@@ -388,9 +386,10 @@ export async function runAnalysis(opts: RunOptions): Promise<RunResult> {
       ...(c.lastKnown ? { lastKnown: c.lastKnown } : {}),
       ...(c.needsManualRead ? { needsManualRead: true, manualRead: manualRead.get(c.competitor) } : {}),
     })),
-    grounding: { greenLight: grounding.greenLight, violations: grounding.violations },
+    grounding: { greenLight: grounding.greenLight, enabled: grounding.enabled, violations: grounding.violations },
     safety: {
       greenLight: safety.greenLight,
+      enabled: safety.enabled,
       violations: safety.violations,
       warnings: safety.warnings ?? [],
       method: (safety.detail?.groundingMethod as string) ?? null,

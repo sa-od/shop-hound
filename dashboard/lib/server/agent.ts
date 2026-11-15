@@ -3,7 +3,7 @@ import { openaiChatModel } from './openai';
 
 /**
  * Reasoning step — writes the Growth Brief from a VERIFIED structured
- * diff. It sits inside the Enkrypt sandwich: the pipeline only calls it after
+ * diff. It sits inside the guardrail sandwich: the pipeline only calls it after
  * the grounding checkpoint, and its output must pass the safety audit.
  *
  * Deliberately tool-less. The safety audit accepts only numbers present in the

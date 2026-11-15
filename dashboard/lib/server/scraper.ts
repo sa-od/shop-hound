@@ -377,7 +377,7 @@ export type CatalogSource = 'shopify' | 'shopify_relay' | 'firecrawl';
 // A synthetic "store" whose catalog smuggles a prompt-injection attack inside a
 // product title — exactly how a hostile competitor page would try to manipulate
 // the reasoning agent. Run `injection-demo.test` from the dashboard to watch the
-// Enkrypt grounding guardrail quarantine it before the agent ever sees it.
+// grounding guardrail quarantine it before the agent ever sees it.
 export const INJECTION_DEMO_DOMAIN = 'injection-demo.test';
 
 const INJECTION_DEMO_CATALOG: NormalizedProduct[] = [
