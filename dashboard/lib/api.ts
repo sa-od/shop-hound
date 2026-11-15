@@ -4,6 +4,7 @@
 import type { BriefSummary, BriefDetail, CompetitorSummary, Verdict, StoreSummary, RunSummary } from './server/briefs-store';
 
 export type { BriefSummary, BriefDetail, CompetitorSummary, Verdict, StoreSummary, RunSummary };
+export type { Change, ChangeKind, ChangeProduct } from './server/changes';
 
 /** One store waiting for, or going through, analysis. Position 1 is running now. */
 export interface QueueItem {
