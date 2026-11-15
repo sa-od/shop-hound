@@ -137,8 +137,8 @@ export function changesFromCompetitorDiff(d: CompetitorDiff, briefId: string): C
       ...base('removed'),
       fact:
         removed.length === 1
-          ? `Removed ${top.title} (${$(top.price)}). Catalogue now ${catalogCount}.`
-          : `Removed ${removed.length} products, including ${top.title} (${$(top.price)}). Catalogue now ${catalogCount}.`,
+          ? `Removed ${top.title} — ${$(top.price)}. Catalogue now ${catalogCount}.`
+          : `Removed ${removed.length} products, including ${top.title} — ${$(top.price)}. Catalogue now ${catalogCount}.`,
       figures: { count: removed.length, catalogCount },
       products: removed.map(p => ({ title: p.title, url: p.url, oldPrice: p.price })),
     });
@@ -151,7 +151,7 @@ export function changesFromCompetitorDiff(d: CompetitorDiff, briefId: string): C
     const hi = Math.max(...prices);
     const at = lo === hi ? `at ${$(lo)}` : `from ${$(lo)} to ${$(hi)}`;
     const [only] = added;
-    const next = added.length === 1 && only.closestExisting ? `, next to ${only.closestExisting.title} (${$(only.closestExisting.price)})` : '';
+    const next = added.length === 1 && only.closestExisting ? `, next to ${only.closestExisting.title} at ${$(only.closestExisting.price)}` : '';
     out.push({
       ...base('new'),
       fact: added.length === 1 ? `Added ${only.title} ${at}${next}.` : `Added ${added.length} products ${at}.`,

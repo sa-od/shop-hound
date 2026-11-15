@@ -34,8 +34,8 @@ test('removed, new and renamed templates; catalogue count leaves add-ons out', (
     newSkus: [{ productId: '4', title: 'No Regifts – Regular', price: 2, url: 'u4', closestExisting: { title: 'No Regifts – Large', price: 2, similarity: 0.97 } }],
     titleChanges: [{ productId: '5', url: 'u5', oldTitle: 'Old', newTitle: 'New' }],
   }), 'b2');
-  assert.equal(cs.find(c => c.kind === 'removed')!.fact, 'Removed 3 products, including Women’s Golf Dasher ($105.00). Catalogue now 311.');
-  assert.equal(cs.find(c => c.kind === 'new')!.fact, 'Added No Regifts – Regular at $2.00, next to No Regifts – Large ($2.00).');
+  assert.equal(cs.find(c => c.kind === 'removed')!.fact, 'Removed 3 products, including Women’s Golf Dasher — $105.00. Catalogue now 311.');
+  assert.equal(cs.find(c => c.kind === 'new')!.fact, 'Added No Regifts – Regular at $2.00, next to No Regifts – Large at $2.00.');
   assert.equal(cs.find(c => c.kind === 'renamed')!.fact, 'Renamed Old to New.');
 });
 
@@ -78,4 +78,9 @@ test('changesFromDiff ranks across a multi-store brief', () => {
 
 test('a drop to $0 is not a price cut (the product stopped being sold online)', () => {
   assert.deepEqual(changesFromCompetitorDiff(diff({ priceChanges: [pc('Gone', 30, 0, -100)] }), 'b'), []);
+});
+
+test('a title ending in brackets never runs into the price', () => {
+  const [c] = changesFromCompetitorDiff(diff({ removedSkus: [{ productId: '1', title: 'Dasher - Blizzard (Blizzard Sole)', price: 105, url: 'u' }] }), 'b');
+  assert.equal(c.fact, 'Removed Dasher - Blizzard (Blizzard Sole) — $105.00. Catalogue now 429.');
 });

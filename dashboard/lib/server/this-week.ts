@@ -12,7 +12,8 @@ import type { CompetitorDiff } from './types';
  * under firstReads; a watched store with no read in the window is unread,
  * with the latest reason we have. Facts are template-built (changes.ts).
  *
- * One aggregation over the window's briefs (grouped per store in the
+ * Only a store's own briefs count (old multi-store briefs don't), so this
+ * agrees with listStores. One aggregation over the window's briefs (grouped per store in the
  * database), plus the watch state (a fixed number of queries, not per store).
  */
 
@@ -31,7 +32,7 @@ export interface ThisWeek {
   firstReads: { store: string; productCount: number; readAt: string; nextCheck: string | null }[];
 }
 
-interface Row {
+export interface Row {
   _id: string; // store domain
   best: { briefId: unknown; createdAt: Date; d: CompetitorDiff };
   latest: { createdAt: Date; status: string; reason?: string | null };
@@ -47,8 +48,11 @@ export async function getThisWeek(opts: { days?: number; now?: Date } = {}): Pro
       .collection(BRIEFS)
       .aggregate<Row>([
         { $match: { createdAt: { $gte: from, $lte: now } } },
-        { $project: { createdAt: 1, competitors: 1, d: '$diff.diffs' } },
+        { $project: { createdAt: 1, competitorKey: 1, competitors: 1, d: '$diff.diffs' } },
         { $unwind: '$d' },
+        // The store's own briefs only (as listStores groups them): old
+        // multi-store briefs are kept but don't feed the weekly feed.
+        { $match: { $expr: { $eq: ['$competitorKey', '$d.competitor'] } } },
         {
           $addFields: {
             // verified (compared) > first read > not read
@@ -74,11 +78,23 @@ export async function getThisWeek(opts: { days?: number; now?: Date } = {}): Pro
     import('./tracking'),
   ]);
 
-  // Watched = tracked sets (removed ones are excluded there), by store.
+  // Watched = tracked sets (removed ones are excluded there).
   const sets = await listTrackedSets(now);
-  const watchedBy = new Map<string, (typeof sets)[number]>();
-  for (const s of sets) for (const c of s.competitors) watchedBy.set(c, s);
-  const byStore = new Map(rows.map(r => [r._id, r]));
+  return { window: { from: from.toISOString(), to: now.toISOString() }, ...classifyWeek({ sets, rows, days }) };
+}
+
+type WatchedSet = { competitors: string[]; nextCheck: string; lastBriefAt: string | null; paused?: boolean };
+
+/**
+ * Sort each watched store into changes / first reads / unread. PURE.
+ * A store counts as read ONLY when one of its reads in the window succeeded
+ * (verified or first read); anything else is unread, with its reason —
+ * never presented as read.
+ */
+export function classifyWeek(args: { sets: WatchedSet[]; rows: Row[]; days: number }): Omit<ThisWeek, 'window'> {
+  const watchedBy = new Map<string, WatchedSet>();
+  for (const s of args.sets) for (const c of s.competitors) watchedBy.set(c, s);
+  const byStore = new Map(args.rows.map(r => [r._id, r]));
 
   const changes: Change[] = [];
   const firstReads: ThisWeek['firstReads'] = [];
@@ -101,15 +117,9 @@ export async function getThisWeek(opts: { days?: number; now?: Date } = {}): Pro
     } else {
       unread.push({
         store,
-        reason: r?.latest.reason || (r ? 'The store couldn’t be read' : set.lastBriefAt ? `Not checked in the last ${days} days` : 'Not checked yet'),
+        reason: r?.latest.reason || (r ? 'The store couldn’t be read' : set.lastBriefAt ? `Not checked in the last ${args.days} days` : 'Not checked yet'),
       });
     }
   }
-
-  return {
-    window: { from: from.toISOString(), to: now.toISOString() },
-    stores: { watched: watchedBy.size, read, unread },
-    changes: rankChanges(changes),
-    firstReads,
-  };
+  return { stores: { watched: watchedBy.size, read, unread }, changes: rankChanges(changes), firstReads };
 }
