@@ -4,9 +4,9 @@ import dynamicImport from "next/dynamic";
 import { ArrowLeft, ShieldAlert, ShieldCheck } from "lucide-react";
 import type { BriefDetail } from "@/lib/api";
 import { getBrief } from "@/lib/server/briefs-store";
-import { trackingFor } from "@/lib/server/tracking";
+import { competitorKeyOf, trackingFor } from "@/lib/server/tracking";
 import { CONTACT_EMAIL } from "@/lib/server/contact";
-import { isWithheld, movementRows, readableViolation, splitBrief } from "@/lib/brief";
+import { isWithheld, movementRows, readableViolation, splitBrief, storeHref } from "@/lib/brief";
 import { BriefOverview } from "@/app/components/BriefOverview";
 import { TrackingLine } from "@/app/components/TrackingLine";
 import { Card } from "@/app/components/shelf";
@@ -45,8 +45,12 @@ export default async function BriefPage({ params }: { params: Promise<{ id: stri
 
   return (
     <main className="mx-auto w-full max-w-[1280px] flex-1 px-4 py-6 sm:px-8 sm:py-8">
-      <Link href="/briefs" className="mb-4 inline-flex items-center gap-1.5 text-sm text-ink-2 hover:text-ink hover:underline">
-        <ArrowLeft size={15} /> All briefs
+      {/* A run's brief is evidence for its store: back goes to the store page. */}
+      <Link
+        href={storeHref(competitorKeyOf(competitors))}
+        className="mb-4 inline-flex items-center gap-1.5 text-sm text-ink-2 hover:text-ink hover:underline"
+      >
+        <ArrowLeft size={15} /> {competitors.join(", ")}
       </Link>
 
       {latestRun && (

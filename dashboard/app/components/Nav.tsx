@@ -4,8 +4,14 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 
 const ITEMS = [
-  { href: "/", label: "This week", match: (p: string) => p === "/" },
-  { href: "/briefs", label: "Briefs", match: (p: string) => p.startsWith("/briefs") },
+  { href: "/", label: "This week", short: "This week", match: (p: string) => p === "/" },
+  // Store pages and per-run briefs sit under My competitors.
+  {
+    href: "/competitors",
+    label: "My competitors",
+    short: "Competitors",
+    match: (p: string) => p.startsWith("/competitors") || p.startsWith("/stores") || p.startsWith("/briefs"),
+  },
 ];
 
 export function Nav() {
@@ -23,7 +29,8 @@ export function Nav() {
               active ? "border-sticker font-semibold text-white" : "border-transparent text-[#a8abb2] hover:text-white"
             }`}
           >
-            {item.label}
+            <span className="sm:hidden">{item.short}</span>
+            <span className="hidden sm:inline">{item.label}</span>
           </Link>
         );
       })}

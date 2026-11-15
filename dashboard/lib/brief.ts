@@ -248,3 +248,8 @@ export function isWithheld(b: { grounding: VerdictLike; safety: VerdictLike }): 
   const skipped = b.safety.detail?.skipped === true || b.safety.violations.some((v) => /audit skipped|blocked the input upstream/i.test(v));
   return b.grounding.enabled !== false && !b.grounding.greenLight && skipped;
 }
+
+/** A store's page. The key is its domain (or "a.com, b.com" for an older multi-store set). */
+export function storeHref(competitorKey: string): string {
+  return `/stores/${encodeURIComponent(competitorKey)}`;
+}

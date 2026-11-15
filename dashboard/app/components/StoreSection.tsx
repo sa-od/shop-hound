@@ -1,3 +1,4 @@
+import { ChevronDown } from "lucide-react";
 import dynamicImport from "next/dynamic";
 import type { BriefDetail } from "@/lib/api";
 import { diffFor, formatPct, formatPrice, isPartialRead, productCountText, sourceLabel, priceTickets, slug, type MovementRow, calendarDay } from "@/lib/brief";
@@ -41,6 +42,7 @@ export function StoreSection({
   contactEmail = null,
   productDelta,
   deltaSince,
+  storePage = false,
 }: {
   brief: BriefDetail;
   row: MovementRow;
@@ -53,6 +55,8 @@ export function StoreSection({
   productDelta?: number;
   /** The date (YYYY-MM-DD) of the read that productDelta is measured against. */
   deltaSince?: string;
+  /** On the store's own page: no repeated name, changes first, the catalogue folded below them. */
+  storePage?: boolean;
 }) {
   const d = diffFor(brief, row.competitor);
   const tickets = priceTickets(brief).filter((t) => t.competitor === row.competitor);
@@ -61,7 +65,13 @@ export function StoreSection({
     <Card className="scroll-mt-20">
       <div id={slug(row.competitor)} className="flex scroll-mt-20 flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
-          <h3 className="font-cond text-[22px] font-bold leading-tight">{row.competitor}</h3>
+          {storePage ? (
+            <h2 className="font-cond text-[22px] font-bold leading-tight">
+              {row.status === "verified" && d ? `Since ${calendarDay(d.previousSnapshotDate)}` : "Latest check"}
+            </h2>
+          ) : (
+            <h3 className="font-cond text-[22px] font-bold leading-tight">{row.competitor}</h3>
+          )}
           <p className="text-xs text-ink-3">
             {row.needsManualRead
               ? "No product catalogue we can read"
@@ -135,7 +145,7 @@ export function StoreSection({
           {d && row.status === "verified" && (
             <>
               {/* The store's catalog as read on this run, then what changed since the run before. */}
-              {row.catalog && (
+              {row.catalog && !storePage && (
                 <>
                   <h4 className="mt-4 font-cond text-lg font-bold">Catalog</h4>
                   <CatalogSnapshot
@@ -223,6 +233,25 @@ export function StoreSection({
                     render={(p) => <ChangeRow key={p.productId} title={p.newTitle} href={p.url} detail={`Was “${p.oldTitle}”`} />}
                   />
                 </Block>
+              )}
+
+              {row.catalog && storePage && (
+                <details className="group mt-6 border-t border-[#eceef1] pt-4">
+                  <summary className="inline-flex cursor-pointer list-none items-center gap-2 [&::-webkit-details-marker]:hidden">
+                    <ChevronDown size={16} className="transition-transform duration-150 group-open:rotate-180" />
+                    <span className="whitespace-nowrap font-cond text-lg font-bold">Catalogue today</span>
+                    <span className="hidden text-xs text-ink-3 sm:inline">
+                      {productCountText(row.catalog.productCount, row.complete)} products · price range, stock, types
+                    </span>
+                  </summary>
+                  <CatalogSnapshot
+                    catalog={row.catalog}
+                    partial={isPartialRead(row.source)}
+                    complete={row.complete}
+                    delta={productDelta}
+                    deltaSince={deltaSince}
+                  />
+                </details>
               )}
             </>
           )}

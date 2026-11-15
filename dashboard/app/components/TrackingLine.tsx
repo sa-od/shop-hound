@@ -7,7 +7,6 @@ import { LocalTime } from "./LocalTime";
 
 export interface Tracking {
   tracked: boolean;
-  trackedUntil: string | null;
   nextCheck: string | null;
   /** Never read yet because the store refused us for now; retried daily. */
   firstReadPending?: boolean;
@@ -37,7 +36,7 @@ export function TrackingLine({ tracking, competitors, unreadable }: { tracking: 
     setNote(
       failed && !failed.ok
         ? failed.error // a manual-read answer carries its message here too
-        : "Added to the queue. The new brief appears in Briefs when it’s ready.",
+        : "Added. It’s read in a minute or so, then every week.",
     );
   }
 
@@ -59,13 +58,7 @@ export function TrackingLine({ tracking, competitors, unreadable }: { tracking: 
   } else if (tracking.tracked) {
     text = (
       <>
-        Re-checked automatically every week
-        {tracking.trackedUntil && (
-          <>
-            {" "}until <LocalTime iso={tracking.trackedUntil} format="date" />
-          </>
-        )}
-        .
+        Checked every week until you remove it.
         {next && (
           <>
             {" "}Next check on or after <LocalTime iso={next} format="date" />.
@@ -73,18 +66,13 @@ export function TrackingLine({ tracking, competitors, unreadable }: { tracking: 
         )}
       </>
     );
-  } else if (tracking.trackedUntil) {
-    text = (
-      <>
-        Tracking ended <LocalTime iso={tracking.trackedUntil} format="date" />.
-      </>
-    );
-    canRunAgain = true;
   } else if (unreadable) {
     text = <>Not re-checked: we couldn’t read {competitors.length === 1 ? "this store" : "these stores"}.</>;
     canRunAgain = true;
   } else {
-    return null;
+    // Not watched (stopped, or from before watching was indefinite): adding it again starts it.
+    text = <>Not being checked.</>;
+    canRunAgain = true;
   }
 
   return (
@@ -103,7 +91,7 @@ export function TrackingLine({ tracking, competitors, unreadable }: { tracking: 
                 className="inline-flex items-center gap-1 font-semibold text-ink underline underline-offset-2 hover:no-underline disabled:cursor-not-allowed disabled:opacity-60"
               >
                 {pending && <Loader2 size={12} className="animate-spin" />}
-                {tracking.trackedUntil ? "Run again to resume" : "Add it again"}
+                {unreadable ? "Add it again" : "Start watching"}
               </button>
             </>
           )}

@@ -21,15 +21,13 @@ export default async function ThisWeek() {
 function FirstUse({ status }: { status: Status }) {
   return (
     <Card className="mx-auto max-w-2xl">
-      <h1 className="font-cond text-[32px] font-extrabold leading-tight tracking-tight">See what your competitors changed</h1>
+      <h1 className="font-cond text-[32px] font-extrabold leading-tight tracking-tight">Watch your competitors</h1>
       <p className="mt-2 max-w-[60ch] text-base leading-relaxed text-ink-2">
-        Add a competitor’s store. The analysis reads its catalog and writes a brief: what changed (prices, new and removed products,
-        renames) and what to do about it. The first check saves the catalog as a baseline; after that the store is re-checked
-        automatically every week for 28 days, each time with a new brief. Add as many stores as you like; they’re analysed one after
-        another.
+        Add the stores you compete with. We read each one now, then again every week until you remove it, and list what changed: price
+        moves, new and removed products, renames.
       </p>
       <div className="mt-6">
-        <NewAnalysisForm initial={status} autoFocus />
+        <NewAnalysisForm initial={status} autoFocus label="Add a competitor" />
       </div>
     </Card>
   );

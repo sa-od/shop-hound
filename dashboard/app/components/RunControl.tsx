@@ -26,7 +26,6 @@ export function RunControl({ initial }: { initial: Status }) {
     setOpenedOn(pathname);
     if (open) setOpen(false);
   }
-  const [dismissed, setDismissed] = useState<string | null>(null);
   const lastBriefRef = useRef<string | null>(initial.lastBrief?.createdAt ?? null);
 
   useEffect(() => {
@@ -40,21 +39,6 @@ export function RunControl({ initial }: { initial: Status }) {
   const running = queue.find((q) => q.status === "running");
   const waiting = queue.filter((q) => q.status === "queued").length;
   const retrying = queue.filter((q) => q.status === "retrying");
-
-  // A failure is shown in the strip until dismissed: one seen leaving the queue
-  // during this visit, or (on load) a failed last run newer than the latest brief.
-  const failedOutcome = outcomes.find((o) => o.status === "failed");
-  const failedOnLoad =
-    status.lastRun?.status === "failed" &&
-    (!status.lastBrief || (status.lastRun.finishedAt ?? "") > status.lastBrief.createdAt)
-      ? status.lastRun
-      : null;
-  const failure = failedOutcome
-    ? { id: failedOutcome.runId, store: failedOutcome.store, error: failedOutcome.error }
-    : failedOnLoad
-      ? { id: failedOnLoad.runId, store: failedOnLoad.store, error: failedOnLoad.error }
-      : null;
-  const showFailure = failure && failure.id !== dismissed && !open;
 
   return (
     <>
@@ -77,10 +61,8 @@ export function RunControl({ initial }: { initial: Status }) {
               ? <>{retrying[0].store}: <RetryPhrase iso={retrying[0].retryAt} before="trying again" /></>
               : `${retrying.length} stores waiting to try again`}
           </span>
-        ) : failure ? (
-          <span className="hidden text-[#ffb4b4] md:inline">Last analysis failed</span>
         ) : status.lastBrief ? (
-          <span className="hidden text-[#a8abb2] md:inline">Last brief <LocalTime iso={status.lastBrief.createdAt} format="shortdate" /></span>
+          <span className="hidden text-[#a8abb2] md:inline">Last check <LocalTime iso={status.lastBrief.createdAt} format="shortdate" /></span>
         ) : null}
 
         <button
@@ -95,8 +77,9 @@ export function RunControl({ initial }: { initial: Status }) {
             "Close"
           ) : (
             <>
-              Add store
-              {queue.length > 0 && <span className="md:hidden"> · {queue.length} in queue</span>}
+              <span className="sm:hidden">Add</span>
+              <span className="hidden sm:inline">Add competitor</span>
+              {queue.length > 0 && <span className="md:hidden"> · {queue.length} reading</span>}
             </>
           )}
         </button>
@@ -112,18 +95,6 @@ export function RunControl({ initial }: { initial: Status }) {
         </div>
       )}
 
-      {showFailure && (
-        <div role="alert" className="absolute inset-x-0 top-14 border-b border-[#f0c9a0] bg-warn-soft text-warn">
-          <div className="mx-auto flex max-w-[1280px] items-start gap-3 px-4 py-2.5 text-[13px] sm:px-8">
-            <p className="flex-1">
-              {failure.store ? `${failure.store} couldn’t be analysed` : "The last analysis failed"}: {failure.error ?? "unknown error"}
-            </p>
-            <button type="button" onClick={() => setDismissed(failure.id)} aria-label="Dismiss" className="rounded p-0.5 hover:bg-[#ffe7a8]">
-              <X size={15} />
-            </button>
-          </div>
-        </div>
-      )}
     </>
   );
 }

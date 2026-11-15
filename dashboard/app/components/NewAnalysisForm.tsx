@@ -12,7 +12,21 @@ import { RetryTime } from "./LocalTime";
 import { ManualReadLink, PlatformTag } from "./ManualRead";
 
 /** Add one store at a time; each add joins the queue, so the next can be typed straight away. */
-export function NewAnalysisForm({ initial, autoFocus = false }: { initial: Status; autoFocus?: boolean }) {
+export function NewAnalysisForm({
+  initial,
+  autoFocus = false,
+  showQueue = true,
+  label = "Store website",
+  help = "Takes about a minute per store. We check each store every week until you remove it.",
+}: {
+  initial: Status;
+  autoFocus?: boolean;
+  /** false where the page shows reading stores in its own rows (My competitors). */
+  showQueue?: boolean;
+  label?: string;
+  /** The idle line under the field. */
+  help?: string;
+}) {
   const live = useLiveStatus(initial);
   const [value, setValue] = useState("");
   const [pending, setPending] = useState(false);
@@ -73,7 +87,7 @@ export function NewAnalysisForm({ initial, autoFocus = false }: { initial: Statu
   return (
     <form onSubmit={submit} noValidate className="w-full">
       <label htmlFor="analysis-store" className="text-sm font-semibold">
-        Store website
+        {label}
       </label>
       <div className="mt-2 flex flex-col gap-2 sm:flex-row">
         <input
@@ -101,7 +115,7 @@ export function NewAnalysisForm({ initial, autoFocus = false }: { initial: Statu
           className="inline-flex h-10 items-center justify-center gap-1.5 rounded-md bg-ink px-4 text-sm font-semibold text-white transition-colors duration-150 hover:bg-[#2a2c30] disabled:cursor-not-allowed disabled:bg-[#9a9da4]"
         >
           {pending ? <Loader2 size={15} className="animate-spin" /> : <Plus size={15} />}
-          {pending ? "Checking the store…" : "Add store"}
+          {pending ? "Checking the store…" : "Add competitor"}
         </button>
       </div>
       <div id="analysis-help" aria-live="polite">
@@ -119,12 +133,11 @@ export function NewAnalysisForm({ initial, autoFocus = false }: { initial: Statu
           >
             {pending
               ? "Checking the store first. This usually takes a few seconds, and up to 20 for some sites."
-              : (error?.text ??
-                "Takes about a minute per store. Each store you add is re-checked automatically every week for 28 days.")}
+              : (error?.text ?? help)}
           </p>
         )}
       </div>
-      <QueueList live={live} hideRunId={added?.runId} />
+      {showQueue && <QueueList live={live} hideRunId={added?.runId} />}
     </form>
   );
 }
