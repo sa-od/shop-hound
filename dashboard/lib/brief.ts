@@ -236,3 +236,15 @@ export function calendarDay(d: string | undefined | null): string {
   const t = new Date(/^\d{4}-\d{2}-\d{2}$/.test(d) ? `${d}T00:00:00Z` : d);
   return Number.isNaN(t.getTime()) ? d : t.toLocaleString("en-US", { month: "short", day: "numeric", timeZone: "UTC" });
 }
+
+type VerdictLike = { greenLight: boolean; violations: string[]; detail?: Record<string, unknown> };
+
+/**
+ * Withheld: the input check blocked the store data (e.g. hidden instructions),
+ * so the AI never ran and nothing was written. Not a failed brief. The policy
+ * check is then a skip, marked by detail.skipped or, on older briefs, its text.
+ */
+export function isWithheld(b: { grounding: VerdictLike; safety: VerdictLike }): boolean {
+  const skipped = b.safety.detail?.skipped === true || b.safety.violations.some((v) => /audit skipped|blocked the input upstream/i.test(v));
+  return !b.grounding.greenLight && skipped;
+}

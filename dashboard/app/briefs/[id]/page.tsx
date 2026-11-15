@@ -6,7 +6,7 @@ import type { BriefDetail } from "@/lib/api";
 import { getBrief } from "@/lib/server/briefs-store";
 import { trackingFor } from "@/lib/server/tracking";
 import { CONTACT_EMAIL } from "@/lib/server/contact";
-import { movementRows, readableViolation, splitBrief } from "@/lib/brief";
+import { isWithheld, movementRows, readableViolation, splitBrief } from "@/lib/brief";
 import { BriefOverview } from "@/app/components/BriefOverview";
 import { TrackingLine } from "@/app/components/TrackingLine";
 import { Card } from "@/app/components/shelf";
@@ -123,7 +123,8 @@ export default async function BriefPage({ params }: { params: Promise<{ id: stri
             />
           ))}
 
-          {rest && (
+          {/* A withheld brief's text only restates the block; the checks below list the reasons. */}
+          {rest && !isWithheld(brief) && (
             <Card>
               <h2 className="font-cond text-[22px] font-extrabold tracking-tight">More from the analyst</h2>
               <div className="mt-2 max-w-[72ch]">
@@ -147,6 +148,7 @@ function notesFor(byStore: Map<string, string>, domain: string): string | null {
 }
 
 function AuditPanel({ brief }: { brief: BriefDetail }) {
+  if (isWithheld(brief)) return <WithheldPanel brief={brief} />;
   const warnings = brief.safety.warnings ?? [];
   const checks = [
     {
@@ -200,6 +202,46 @@ function AuditPanel({ brief }: { brief: BriefDetail }) {
           </ul>
         </div>
       )}
+    </Card>
+  );
+}
+
+/** The input check blocked the store data: the AI never ran, so the policy check had nothing to check. */
+function WithheldPanel({ brief }: { brief: BriefDetail }) {
+  return (
+    <Card className="scroll-mt-20">
+      <h2 id="audit" className="scroll-mt-20 font-cond text-[22px] font-extrabold tracking-tight">
+        How this brief was checked
+      </h2>
+      <p role="status" className="mt-2 text-sm font-semibold text-warn">
+        Withheld: store data failed the input check. The AI never read it, so nothing was written.
+      </p>
+      <dl className="mt-3 grid divide-y divide-[#eceef1] border-y border-[#eceef1] sm:grid-cols-2 sm:divide-x sm:divide-y-0">
+        <div className="py-3.5 sm:pr-5">
+          <dt className="flex items-center justify-between gap-3">
+            <span className="text-sm font-semibold">Input check</span>
+            <span className="inline-flex items-center gap-1 text-xs font-semibold text-warn">
+              <ShieldAlert size={14} /> Blocked
+            </span>
+          </dt>
+          <dd className="mt-0.5 text-xs text-ink-3">Store pages screened for hidden instructions before the AI reads them</dd>
+          <dd className="mt-1.5">
+            <ul className="list-disc space-y-1 pl-4 text-[13px] text-ink-2">
+              {(brief.grounding.violations.length ? brief.grounding.violations : ["The store data was blocked"]).map((v) => (
+                <li key={v}>{readableViolation(v)}</li>
+              ))}
+            </ul>
+          </dd>
+        </div>
+        <div className="py-3.5 sm:pl-5">
+          <dt className="flex items-center justify-between gap-3">
+            <span className="text-sm font-semibold">Policy</span>
+            <span className="text-xs font-semibold text-ink-3">Not run</span>
+          </dt>
+          <dd className="mt-0.5 text-xs text-ink-3">The written brief checked against our compliance policy</dd>
+          <dd className="mt-1.5 text-[13px] text-ink-2">Nothing was written, so there was nothing to check.</dd>
+        </div>
+      </dl>
     </Card>
   );
 }

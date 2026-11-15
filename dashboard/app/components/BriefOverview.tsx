@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { ArrowRight } from "lucide-react";
 import type { BriefDetail } from "@/lib/api";
-import { calendarDay, diffFor, formatMoney, movementRows, priceTickets, splitBrief, type CatalogSummary } from "@/lib/brief";
+import { calendarDay, diffFor, isWithheld, formatMoney, movementRows, priceTickets, splitBrief, type CatalogSummary } from "@/lib/brief";
 import { LocalTime } from "./LocalTime";
 import { MovementsTable } from "./MovementsTable";
 import { Card, Rail, Ticket, TrustLine } from "./shelf";
@@ -71,6 +71,7 @@ export function BriefOverview({
   lower?: React.ReactNode;
 }) {
   const { summary, recommendations } = splitBrief(brief.briefMarkdown);
+  const withheld = isWithheld(brief);
   const tickets = priceTickets(brief);
   const rows = movementRows(brief);
   const diffed = rows.filter((r) => r.status === "verified").length;
@@ -98,7 +99,12 @@ export function BriefOverview({
           <h1 className="font-cond text-[32px] font-extrabold leading-[1.05] tracking-tight sm:text-[36px]">
             Week of <LocalTime iso={brief.createdAt} format="date" />
           </h1>
-          {summary ? (
+          {withheld ? (
+            <p className="mt-3 max-w-[70ch] text-base leading-relaxed text-ink-2">
+              <span className="font-semibold text-warn">Withheld: store data failed the input check.</span> The AI never read it, so
+              nothing was written for this run. The reasons are under How this brief was checked.
+            </p>
+          ) : summary ? (
             <p className="mt-3 max-w-[70ch] text-base leading-relaxed text-ink-2">
               <Inline text={summary} />
             </p>
@@ -120,7 +126,7 @@ export function BriefOverview({
                 ))}
               </Rail>
             </>
-          ) : noneRead ? null : (
+          ) : noneRead || withheld ? null : (
             <p className="mt-6 rounded-lg bg-shelf px-4 py-3.5 text-sm text-ink-2">
               {baseline
                 ? baselineText

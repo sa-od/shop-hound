@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { ExternalLink, ShieldAlert, ShieldCheck } from "lucide-react";
 import type { BriefSummary } from "@/lib/api";
-import { formatPct, formatPrice, type PriceTicket } from "@/lib/brief";
+import { formatPct, formatPrice, type PriceTicket, isWithheld } from "@/lib/brief";
 
 /** A price change as a shelf-edge ticket. The yellow sticker marks cuts only. */
 export function Ticket({ t, showStore = true }: { t: PriceTicket; showStore?: boolean }) {
@@ -67,13 +67,16 @@ export function AuditTag({ passed }: { passed: boolean }) {
 export function TrustLine({ brief }: { brief: BriefSummary }) {
   const checked = brief.competitors.filter((c) => c.status !== "unverified").length;
   const Icon = brief.greenLight ? ShieldCheck : ShieldAlert;
+  const withheld = isWithheld(brief);
   return (
     <Link
       href={`/briefs/${brief.id}#audit`}
       className="inline-flex items-center gap-1.5 text-xs text-ink-2 hover:text-ink hover:underline"
     >
       <Icon size={14} className={checked === 0 ? "text-ink-3" : brief.greenLight ? "text-ok" : "text-warn"} />
-      {checked === 0
+      {withheld
+        ? "Withheld: store data failed the input check"
+        : checked === 0
         ? "No store data to verify"
         : `${brief.greenLight ? "Verified" : "Didn’t pass the checks"} · ${checked} of ${brief.competitors.length} stores checked`}{" "}
       · How it was checked
