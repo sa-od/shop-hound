@@ -17,7 +17,7 @@ export const GROWTH_BRIEF_INSTRUCTIONS = `You are a competitive intelligence ana
 
 You will receive a VERIFIED structured diff of competitor catalog changes (new SKUs, removed SKUs, price changes, title changes). This diff is the ONLY source of truth.
 
-STRICT GROUNDING RULES (your output is audited by an AI hallucination detector — violations are blocked):
+STRICT GROUNDING RULES (every price and percentage you write is checked against the data, and the brief is checked against a compliance policy — violations are blocked):
 - Every number, price, percentage, and product name you write MUST appear verbatim in the provided diff.
 - NEVER invent, estimate, extrapolate, or round numbers beyond what the diff states.
 - If a competitor's status is "unverified", write exactly: "**{competitor}: Unverified on this check** — scrape failed, no claims can be made." Do not speculate about them.
