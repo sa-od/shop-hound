@@ -20,7 +20,7 @@ import type { CompetitorDiff } from './types';
 export interface ThisWeek {
   window: { from: string; to: string };
   stores: {
-    /** Stores being watched (active or paused). */
+    /** Stores being watched (active only: paused stores are left out of This week entirely). */
     watched: number;
     /** Watched stores read at least once in the window. */
     read: number;
@@ -29,7 +29,7 @@ export interface ThisWeek {
   /** Ranked 1..n across all stores. */
   changes: Change[];
   /** Watched stores whose only reads in the window were first reads (nothing to compare yet). */
-  firstReads: { store: string; productCount: number; readAt: string; nextCheck: string | null }[];
+  firstReads: { store: string; productCount: number; readAt: string; nextCheck: string }[];
 }
 
 export interface Row {
@@ -93,7 +93,8 @@ type WatchedSet = { competitors: string[]; nextCheck: string; lastBriefAt: strin
  */
 export function classifyWeek(args: { sets: WatchedSet[]; rows: Row[]; days: number }): Omit<ThisWeek, 'window'> {
   const watchedBy = new Map<string, WatchedSet>();
-  for (const s of args.sets) for (const c of s.competitors) watchedBy.set(c, s);
+  // Paused = not watching: left out entirely (they stay visible on My competitors only).
+  for (const s of args.sets) if (!s.paused) for (const c of s.competitors) watchedBy.set(c, s);
   const byStore = new Map(args.rows.map(r => [r._id, r]));
 
   const changes: Change[] = [];
@@ -112,7 +113,7 @@ export function classifyWeek(args: { sets: WatchedSet[]; rows: Row[]; days: numb
         store,
         productCount: r!.best.d.catalog?.productCount ?? r!.best.d.productCount,
         readAt: r!.best.createdAt.toISOString(),
-        nextCheck: set.paused ? null : set.nextCheck,
+        nextCheck: set.nextCheck,
       });
     } else {
       unread.push({

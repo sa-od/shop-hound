@@ -31,3 +31,19 @@ test('a store never read in the window is unread with its reason — never read,
   assert.deepEqual(w.firstReads.map(f => f.store), ['neutonic.com']);
   assert.deepEqual(w.changes.map(c => `${c.rank}:${c.store}:${c.kind}`), ['1:allbirds.com:removed']);
 });
+
+test('paused stores are left out of This week entirely: not watched, no changes, not unread, no first read', () => {
+  const removal = { removedSkus: [{ productId: '1', title: 'Cruiser', price: 98, url: 'u' }] };
+  const w = classifyWeek({
+    sets: [set('allbirds.com', { paused: true }), set('quiet.com', { paused: true }), set('neutonic.com', { paused: true }), set('goodr.com')],
+    rows: [
+      { _id: 'allbirds.com', best: { briefId: 'b', createdAt: at, d: d('allbirds.com', 'verified', removal) }, latest: { createdAt: at, status: 'verified' } },
+      { _id: 'neutonic.com', best: { briefId: 'c', createdAt: at, d: d('neutonic.com', 'first_snapshot') }, latest: { createdAt: at, status: 'first_snapshot' } },
+      { _id: 'goodr.com', best: { briefId: 'e', createdAt: at, d: d('goodr.com', 'verified', removal) }, latest: { createdAt: at, status: 'verified' } },
+    ],
+    days: 7,
+  });
+  assert.deepEqual(w.stores, { watched: 1, read: 1, unread: [] });
+  assert.deepEqual(w.changes.map(c => c.store), ['goodr.com']);
+  assert.deepEqual(w.firstReads, []);
+});
