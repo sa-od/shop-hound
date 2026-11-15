@@ -1,33 +1,33 @@
 import { db, RUNS, BRIEFS, SNAPSHOTS } from './db';
 import { INJECTION_DEMO_DOMAIN, normalizeDomain } from './scraper';
+import type { WatchEntry } from './watchlist';
 
 /**
- * Automatic tracking. Every set of stores a user analyses from the dashboard
- * is re-checked about weekly, so they get a "what changed" brief without
- * doing anything. No watchlist: tracking is derived from what was run.
+ * Automatic tracking (the watchlist). Every store a user adds from the
+ * dashboard is WATCHED INDEFINITELY — re-checked about weekly, so they get a
+ * "what changed" feed without doing anything — until they pause or remove it.
+ * What is watched is derived from dashboard runs; the user's choices live in
+ * watchlist.ts.
  *
- * - A set is TRACKED for TRACK_DAYS after a user last ran it from the
- *   dashboard. Automatic (cron) runs never extend it — otherwise every set
- *   would be tracked forever.
- * - A tracked set is DUE when its latest brief is RECHECK_DAYS old (or it has
+ * - A watched set is DUE when its latest brief is RECHECK_DAYS old (or it has
  *   none yet). The cron runs daily and works through due sets, oldest first.
- * - COMPETITOR_STORES, when set, is one extra set tracked indefinitely.
- * - At most MAX_TRACKED_SETS user sets are tracked (most recently run first),
- *   which bounds the weekly spend.
+ * - COMPETITOR_STORES, when set, is one extra set, watched the same way.
  * - Only stores that were scraped successfully at least once are tracked: a
  *   fake, dead or non-store site gets one brief explaining why, never a
  *   weekly bill. Exception — FIRST READ PENDING: a store that refused us for
  *   now (rate limit / block) on its last run stays tracked and is retried
  *   daily (PENDING_RECHECK_DAYS) instead of weekly, until a read succeeds or
  *   tracking ends.
+ * - The watchlist (watchlist.ts) adjusts this per store: a PAUSED set stays
+ *   listed but is never due; a REMOVED set is not watched at all.
+ * - No cap on watched stores; the queue's MAX_QUEUED bounds a single day, and
+ *   due stores that don't fit carry over to the next day.
  */
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
-export const TRACK_DAYS = positiveInt(process.env.TRACK_DAYS, 28);
 export const RECHECK_DAYS = 7;
 export const PENDING_RECHECK_DAYS = 1;
-export const MAX_TRACKED_SETS = positiveInt(process.env.MAX_TRACKED_SETS, 20);
 
 export interface TrackedSet {
   competitorKey: string;
@@ -36,8 +36,6 @@ export interface TrackedSet {
   origin: 'user' | 'default';
   /** When a user last ran this set from the dashboard (null for the default set). */
   lastUserRunAt: string | null;
-  /** When tracking ends (null = indefinitely, for the default set). */
-  trackedUntil: string | null;
   /** The set's latest brief, from any trigger (null = none yet). */
   lastBriefAt: string | null;
   /** When the set is next due (approximate: a busy day pushes it to the next). */
@@ -45,15 +43,25 @@ export interface TrackedSet {
   due: boolean;
   /** Never read yet because the store refused us for now; retried daily. */
   firstReadPending: boolean;
+  /** Paused by the user: tracked, but the daily check skips it. */
+  paused?: boolean;
 }
 
 export interface TrackingStatus {
+  /** Watched: re-checked about weekly until paused or removed. false = can't be read (never scraped), or never added. */
   tracked: boolean;
-  trackedUntil: string | null;
+  /** Next automatic check, "on or after" (null: paused or not watched). */
   nextCheck: string | null;
   /** Tracked, but never read yet: the store refused us for now. nextCheck is the next try. */
   firstReadPending?: boolean;
+  /** Paused by the user: no automatic checks until resumed (nextCheck is null). */
+  paused?: boolean;
 }
+
+/** How a store row reads: watched, paused by the user, or not watched (it can't be read — never by time). */
+export type Watching = 'active' | 'paused' | 'ended';
+
+export const watchingOf = (t: TrackingStatus): Watching => (!t.tracked ? 'ended' : t.paused ? 'paused' : 'active');
 
 /** Canonical key for a store set — the same one briefs are stored under. */
 export function competitorKeyOf(competitors: string[]): string {
@@ -80,16 +88,14 @@ export function computeTrackedSets(args: {
   scrapedStores?: Set<string>;
   /** Never-read sets whose last run was refused for now (still worth retrying). */
   pendingKeys?: Set<string>;
+  /** Per-key user choices: paused / removed. */
+  watch?: Map<string, WatchEntry>;
   defaultCompetitors: string[];
   now: Date;
-  trackDays?: number;
   recheckDays?: number;
-  maxSets?: number;
 }): TrackedSet[] {
   const { now } = args;
-  const trackMs = (args.trackDays ?? TRACK_DAYS) * DAY_MS;
   const recheckMs = (args.recheckDays ?? RECHECK_DAYS) * DAY_MS;
-  const maxSets = args.maxSets ?? MAX_TRACKED_SETS;
 
   const entry = (
     competitorKey: string,
@@ -106,7 +112,6 @@ export function computeTrackedSets(args: {
       competitors,
       origin,
       lastUserRunAt: lastUserRunAt?.toISOString() ?? null,
-      trackedUntil: lastUserRunAt ? new Date(lastUserRunAt.getTime() + trackMs).toISOString() : null,
       lastBriefAt: lastBrief?.toISOString() ?? null,
       nextCheck: next.toISOString(),
       due: next.getTime() <= now.getTime(),
@@ -114,22 +119,25 @@ export function computeTrackedSets(args: {
     };
   };
 
+  const watch = args.watch ?? new Map<string, WatchEntry>();
+  const removed = (key: string) => watch.get(key)?.state === 'removed';
+
   const user = args.userRuns
-    .filter(r => r.lastUserRunAt.getTime() + trackMs > now.getTime()) // still in window
+    .filter(r => !removed(r.competitorKey))
     .filter(r => !r.competitors.includes(INJECTION_DEMO_DOMAIN)) // the honeypot is a demo, not a store
     .filter(r => r.competitors.length > 0)
     .map(r => ({ r, read: !args.scrapedStores || r.competitors.every(c => args.scrapedStores!.has(c)) }))
     .filter(({ r, read }) => read || (args.pendingKeys?.has(r.competitorKey) ?? false))
     .sort((a, b) => b.r.lastUserRunAt.getTime() - a.r.lastUserRunAt.getTime())
-    .slice(0, maxSets)
     .map(({ r, read }) => entry(r.competitorKey, r.competitors, 'user', r.lastUserRunAt, !read));
 
   const sets = [...user];
   const defaultKey = competitorKeyOf(args.defaultCompetitors);
-  if (defaultKey && !sets.some(s => s.competitorKey === defaultKey)) {
+  if (defaultKey && !removed(defaultKey) && !sets.some(s => s.competitorKey === defaultKey)) {
     sets.push(entry(defaultKey, defaultKey.split(','), 'default', null));
   }
-  return sets;
+  // Paused: still tracked (listed, window running), never due.
+  return sets.map(s => (watch.get(s.competitorKey)?.state === 'paused' ? { ...s, due: false, paused: true } : s));
 }
 
 /** Due sets, the longest-waiting first (never-briefed sets lead). */
@@ -146,13 +154,12 @@ function defaultCompetitors(): string[] {
   return (process.env.COMPETITOR_STORES ?? '').split(',').map(normalizeDomain).filter(Boolean);
 }
 
-/** Most recent successful dashboard run per set, within the tracking window. */
-async function loadUserRuns(now: Date): Promise<UserRunFact[]> {
-  const since = new Date(now.getTime() - TRACK_DAYS * DAY_MS);
+/** Most recent successful dashboard run per set (any age: watching is indefinite). */
+async function loadUserRuns(): Promise<UserRunFact[]> {
   const rows = await db()
     .collection(RUNS)
     .aggregate<{ _id: string; competitors: string[]; lastUserRunAt: Date }>([
-      { $match: { trigger: 'dashboard', status: 'success', startedAt: { $gte: since }, competitorKey: { $type: 'string' } } },
+      { $match: { trigger: 'dashboard', status: 'success', competitorKey: { $type: 'string' } } },
       { $sort: { startedAt: -1 } },
       { $group: { _id: '$competitorKey', competitors: { $first: '$competitors' }, lastUserRunAt: { $first: '$startedAt' } } },
     ])
@@ -200,15 +207,17 @@ async function loadLastBriefAt(keys: string[]): Promise<Map<string, Date>> {
 }
 
 /** Every tracked set, with when it is next due. */
-export async function listTrackedSets(now = new Date()): Promise<TrackedSet[]> {
-  const userRuns = await loadUserRuns(now);
-  const keys = [...userRuns.map(r => r.competitorKey), competitorKeyOf(defaultCompetitors())].filter(Boolean);
+export async function listTrackedSets(now = new Date(), watchlist?: Map<string, WatchEntry>): Promise<TrackedSet[]> {
+  const { loadWatchlist } = await import('./watchlist');
+  const [userRuns, watch] = await Promise.all([loadUserRuns(), watchlist ?? loadWatchlist()]);
+  const userKeys = userRuns.map(r => r.competitorKey);
+  const keys = [...userKeys, competitorKeyOf(defaultCompetitors())].filter(Boolean);
   const [lastBriefAt, scrapedStores, pendingKeys] = await Promise.all([
     loadLastBriefAt(keys),
-    loadScrapedStores([...new Set(userRuns.flatMap(r => r.competitors))]),
-    loadPendingKeys(userRuns.map(r => r.competitorKey)),
+    loadScrapedStores([...new Set(userKeys.flatMap(k => k.split(',')))]),
+    loadPendingKeys(userKeys),
   ]);
-  return computeTrackedSets({ userRuns, lastBriefAt, scrapedStores, pendingKeys, defaultCompetitors: defaultCompetitors(), now });
+  return computeTrackedSets({ userRuns, lastBriefAt, scrapedStores, pendingKeys, watch, defaultCompetitors: defaultCompetitors(), now });
 }
 
 /** Tracked sets that are due now, longest-waiting first. */
@@ -216,55 +225,28 @@ export async function getDueSets(now = new Date()): Promise<TrackedSet[]> {
   return dueFirst(await listTrackedSets(now));
 }
 
-/**
- * Tracking status for one store set — for the brief page. When tracking has
- * lapsed, `trackedUntil` still says when it ended (so the UI can offer
- * "run again to resume"); it is null if a user never ran this set, or if it
- * was never scraped successfully (so it is not re-checked).
- */
+/** Tracking status for one store set — for the brief page. */
 export async function trackingFor(competitors: string[], now = new Date()): Promise<TrackingStatus> {
   const key = competitorKeyOf(competitors);
   return (await trackingForKeys([key], now)).get(key)!;
 }
 
 /** trackingFor for many store sets at once (the stores list): a fixed number of queries, not per set. */
-export async function trackingForKeys(keys: string[], now = new Date()): Promise<Map<string, TrackingStatus>> {
-  const out = new Map<string, TrackingStatus>();
-  const trackedSets = new Map((await listTrackedSets(now)).map(s => [s.competitorKey, s]));
-  const rest: string[] = [];
-  for (const key of keys) {
-    const t = trackedSets.get(key);
-    if (t) {
-      out.set(key, {
-        tracked: true,
-        trackedUntil: t.trackedUntil,
-        nextCheck: t.nextCheck,
-        ...(t.firstReadPending ? { firstReadPending: true } : {}),
-      });
-    } else rest.push(key);
-  }
-  if (rest.length === 0) return out;
-
-  const scraped = await loadScrapedStores([...new Set(rest.flatMap(k => k.split(',')))]);
-  const readable = rest.filter(k => k.split(',').every(c => scraped.has(c)));
-  const lastRuns = readable.length
-    ? await db()
-        .collection(RUNS)
-        .aggregate<{ _id: string; at: Date }>([
-          { $match: { trigger: 'dashboard', status: 'success', competitorKey: { $in: readable } } },
-          { $group: { _id: '$competitorKey', at: { $max: '$startedAt' } } },
-        ])
-        .toArray()
-    : [];
-  const lastAt = new Map(lastRuns.map(r => [r._id, r.at]));
-  for (const key of rest) {
-    const at = lastAt.get(key);
-    out.set(key, { tracked: false, trackedUntil: at ? new Date(at.getTime() + TRACK_DAYS * DAY_MS).toISOString() : null, nextCheck: null });
-  }
-  return out;
-}
-
-function positiveInt(raw: string | undefined, fallback: number): number {
-  const n = Number.parseInt(raw ?? '', 10);
-  return Number.isFinite(n) && n > 0 ? n : fallback;
+export async function trackingForKeys(keys: string[], now = new Date(), watchlist?: Map<string, WatchEntry>): Promise<Map<string, TrackingStatus>> {
+  const trackedSets = new Map((await listTrackedSets(now, watchlist)).map(s => [s.competitorKey, s]));
+  return new Map(
+    keys.map((key): [string, TrackingStatus] => {
+      const t = trackedSets.get(key);
+      if (!t) return [key, { tracked: false, nextCheck: null }];
+      return [
+        key,
+        {
+          tracked: true,
+          nextCheck: t.paused ? null : t.nextCheck,
+          ...(t.firstReadPending ? { firstReadPending: true } : {}),
+          ...(t.paused ? { paused: true } : {}),
+        },
+      ];
+    }),
+  );
 }

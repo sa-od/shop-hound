@@ -1,5 +1,5 @@
 import { ObjectId } from 'mongodb';
-import { db, BRIEFS } from './db';
+import { db, BRIEFS, RUNS } from './db';
 import type { StructuredDiff } from './types';
 
 /** Archived Growth Briefs — the dashboard's read path and the pipeline's trend history. */
@@ -206,6 +206,22 @@ export interface StoreSummary {
   /** The latest brief was withheld: its data failed the grounding guardrail, so no brief was written. */
   withheld?: boolean;
   tracking: import('./tracking').TrackingStatus;
+  /** active: checked about weekly, until paused or removed · paused: by the user, no automatic checks · ended: not watched (it can't be read). */
+  watching: import('./tracking').Watching;
+  /** Next automatic check, "on or after" (null: paused or not watched). Same as tracking.nextCheck. */
+  nextCheck: string | null;
+  /** Being read right now: the step and when it began. */
+  reading?: { step: import('./runs').RunStep | null; stepStartedAt: string | null };
+  /** Waiting to retry because the store refused us for now. */
+  retrying?: { retryAt: string; reason: string | null };
+  /** Waiting in the queue. */
+  queued?: true;
+  /**
+   * Products changed in the last 7 days, from the store's latest compared
+   * read in that window (the same read "This week" uses). Counts per kind,
+   * matching changes.ts (price_cut / price_rise / new / removed / renamed).
+   */
+  week: { total: number; byKind: Partial<Record<import('./changes').ChangeKind, number>>; briefId?: string };
 }
 
 /** One readable run of a store, for its history. */
@@ -233,7 +249,7 @@ export interface RunSummary {
 /** What the store and run lists need from a brief: counts only, no brief text or product lists. */
 type SlimBrief = Pick<BriefDoc, '_id' | 'competitorKey' | 'createdAt' | 'greenLight' | 'trigger'> & {
   competitors: Pick<CompetitorSummary, 'competitor' | 'status' | 'productCount' | 'complete' | 'newSkus' | 'priceChanges' | 'titleChanges' | 'needsManualRead'>[];
-  diffs: { competitor: string; previousProductCount?: number; previousSnapshotDate?: string | null; removedCount: number; catalogCount?: number }[];
+  diffs: { competitor: string; status?: string; previousProductCount?: number; previousSnapshotDate?: string | null; removedCount: number; catalogCount?: number; cuts: number; rises: number }[];
   readable: boolean;
   withheld: boolean;
 };
@@ -277,8 +293,10 @@ const SLIM_STAGE = {
       $map: {
         input: { $ifNull: ['$diff.diffs', []] }, as: 'd',
         in: {
-          competitor: '$$d.competitor', previousProductCount: '$$d.previousProductCount', previousSnapshotDate: '$$d.previousSnapshotDate',
+          competitor: '$$d.competitor', status: '$$d.status', previousProductCount: '$$d.previousProductCount', previousSnapshotDate: '$$d.previousSnapshotDate',
           removedCount: { $size: { $ifNull: ['$$d.removedSkus', []] } }, catalogCount: '$$d.catalog.productCount',
+          cuts: { $size: { $filter: { input: { $ifNull: ['$$d.priceChanges', []] }, as: 'p', cond: { $lt: ['$$p.newPrice', '$$p.oldPrice'] } } } },
+          rises: { $size: { $filter: { input: { $ifNull: ['$$d.priceChanges', []] }, as: 'p', cond: { $gt: ['$$p.newPrice', '$$p.oldPrice'] } } } },
         },
       },
     },
@@ -321,16 +339,51 @@ const compared = (b: SlimBrief) => {
   return { delta, ...(since ? { since } : {}) };
 };
 
+/** Days in the "this week" window (rolling). */
+export const WEEK_DAYS = 7;
+
+/** Per-kind product counts of a brief's compared (verified) stores — what changes.ts would emit. */
+export function weekTotals(b: Pick<SlimBrief, 'competitors' | 'diffs'>): StoreSummary['week'] {
+  const byKind: StoreSummary['week']['byKind'] = {};
+  const add = (k: keyof typeof byKind, n: number) => { if (n > 0) byKind[k] = (byKind[k] ?? 0) + n; };
+  for (const d of b.diffs) {
+    const c = b.competitors.find(x => x.competitor === d.competitor);
+    if (!c || c.status !== 'verified') continue;
+    add('price_cut', d.cuts ?? 0);
+    add('price_rise', d.rises ?? 0);
+    add('removed', d.removedCount);
+    add('new', c.newSkus);
+    add('renamed', c.titleChanges);
+  }
+  return { total: Object.values(byKind).reduce((n, v) => n + (v ?? 0), 0), byKind };
+}
+
+interface ActiveRunRow { status: 'queued' | 'running' | 'retrying'; step?: import('./runs').RunStep; stepStartedAt?: Date; retryAt?: Date | null; retryReason?: string | null }
+
 /**
- * Every store set with a brief, newest latest brief first. Grouped in the
- * database: one row per store comes back, however many runs it has.
+ * Every store set with a brief, newest latest brief first — except stores the
+ * user removed. Grouped in the database, with each store's active run (reading
+ * / retrying / queued) joined in the same query: one row per store comes back,
+ * however many runs it has.
  */
-export async function listStores(): Promise<StoreSummary[]> {
+export async function listStores(now = new Date()): Promise<StoreSummary[]> {
+  const weekFrom = new Date(now.getTime() - WEEK_DAYS * 24 * 60 * 60 * 1000);
   const rows = await db()
     .collection<BriefDoc>(BRIEFS)
-    .aggregate<{ _id: string; latest: SlimBrief; runCount: number; lastReadable: SlimBrief[] }>([
+    .aggregate<{ _id: string; latest: SlimBrief; runCount: number; lastReadable: SlimBrief[]; weekBrief: (SlimBrief & { inWeek: boolean })[]; activeRun: ActiveRunRow[] }>([
       { $sort: { createdAt: -1 } },
       SLIM_STAGE,
+      // A compared (verified) read inside the rolling week: the one "This week" uses.
+      {
+        $addFields: {
+          inWeek: {
+            $and: [
+              { $gte: ['$createdAt', weekFrom] },
+              { $anyElementTrue: [{ $map: { input: '$competitors', as: 'c', in: { $eq: ['$$c.status', 'verified'] } } }] },
+            ],
+          },
+        },
+      },
       {
         $group: {
           _id: '$competitorKey',
@@ -338,19 +391,36 @@ export async function listStores(): Promise<StoreSummary[]> {
           runCount: { $sum: { $cond: ['$readable', 1, 0] } },
           // Readable briefs sort first, newest first: [0] is the latest readable one, if any.
           lastReadable: { $topN: { n: 1, sortBy: { readable: -1, createdAt: -1 }, output: '$$ROOT' } },
+          weekBrief: { $topN: { n: 1, sortBy: { inWeek: -1, createdAt: -1 }, output: '$$ROOT' } },
+        },
+      },
+      {
+        $lookup: {
+          from: RUNS,
+          let: { key: '$_id' },
+          pipeline: [
+            { $match: { active: true, $expr: { $eq: ['$competitorKey', '$$key'] } } },
+            { $project: { _id: 0, status: 1, step: 1, stepStartedAt: 1, retryAt: 1, retryReason: 1 } },
+          ],
+          as: 'activeRun',
         },
       },
       { $sort: { 'latest.createdAt': -1 } },
     ])
     .toArray();
 
-  const { trackingForKeys } = await import('./tracking');
-  const tracking = await trackingForKeys(rows.map(r => r._id));
+  const [{ trackingForKeys, watchingOf }, { loadWatchlist }] = await Promise.all([import('./tracking'), import('./watchlist')]);
+  const watch = await loadWatchlist();
+  const visible = rows.filter(r => watch.get(r._id)?.state !== 'removed');
+  const tracking = await trackingForKeys(visible.map(r => r._id), now, watch);
 
-  return rows.map(({ _id: key, latest, runCount, lastReadable }): StoreSummary => {
+  return visible.map(({ _id: key, latest, runCount, lastReadable, weekBrief, activeRun }): StoreSummary => {
     const readableBrief = lastReadable[0]?.readable ? lastReadable[0] : null;
     const last = readableBrief ? readCount(readableBrief) : null;
     const change = readableBrief ? compared(readableBrief) : null;
+    const t = tracking.get(key) ?? { tracked: false, nextCheck: null };
+    const [run] = activeRun;
+    const [wk] = weekBrief;
     return {
       store: key.split(',').join(', '),
       competitorKey: key,
@@ -363,7 +433,13 @@ export async function listStores(): Promise<StoreSummary[]> {
       ...(last && !last.complete ? { complete: false } : {}),
       ...(latest.competitors.length > 0 && latest.competitors.every(c => c.needsManualRead) ? { needsManualRead: true } : {}),
       ...(latest.withheld ? { withheld: true } : {}),
-      tracking: tracking.get(key) ?? { tracked: false, trackedUntil: null, nextCheck: null },
+      tracking: t,
+      watching: watchingOf(t),
+      nextCheck: t.nextCheck,
+      ...(run?.status === 'running' ? { reading: { step: run.step ?? null, stepStartedAt: run.stepStartedAt?.toISOString() ?? null } } : {}),
+      ...(run?.status === 'retrying' && run.retryAt ? { retrying: { retryAt: run.retryAt.toISOString(), reason: run.retryReason ?? null } } : {}),
+      ...(run?.status === 'queued' ? { queued: true as const } : {}),
+      week: wk?.inWeek ? { ...weekTotals(wk), briefId: wk._id.toHexString() } : { total: 0, byKind: {} },
     };
   });
 }

@@ -21,6 +21,7 @@ export const maxDuration = 300;
  * 400 { error, code }   code: multiple | invalid_url | not_found | private_address
  * 429 { error, code: 'queue_full' }
  *
+ * Adding a store resumes watching it if it was paused or removed.
  * Adding a store that is already queued or running returns that run (202).
  * One waiting to retry is brought forward to now — or to the store's own
  * Retry-After, if later: `status: 'retrying'`, `retryAt`, `expedited: true`.
@@ -55,7 +56,7 @@ export async function POST(req: Request) {
   }
 
   try {
-    const { run, position, existing, expedited } = await queueRun([parsed.domain], 'dashboard');
+    const { run, position, existing, expedited } = await queueRun([parsed.domain], 'dashboard', { watchAgain: true });
     return NextResponse.json(
       {
         accepted: true,

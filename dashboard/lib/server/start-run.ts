@@ -139,7 +139,16 @@ export function drainInBackground(opts: { wait: boolean }): void {
  *
  * Throws QueueFullError when the queue is full.
  */
-export async function queueRun(competitors: string[], trigger: RunTrigger): Promise<{ run: RunRecord; position: number; existing: boolean; expedited: boolean }> {
+export async function queueRun(
+  competitors: string[],
+  trigger: RunTrigger,
+  opts: { watchAgain?: boolean } = {},
+): Promise<{ run: RunRecord; position: number; existing: boolean; expedited: boolean }> {
+  // Adding a store from the dashboard means "watch this": un-remove / un-pause it.
+  if (opts.watchAgain) {
+    const [{ watchAgain }, { competitorKeyOf }] = await Promise.all([import('./watchlist'), import('./tracking')]);
+    await watchAgain(competitorKeyOf(competitors));
+  }
   const { run, existing, expedited = false } = await enqueueRun({ competitors, trigger });
   drainInBackground({ wait: true });
   const queue = await getQueue();

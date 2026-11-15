@@ -15,7 +15,7 @@ const run = (competitors: string[], ranDaysAgo: number): UserRunFact => ({
   competitors,
   lastUserRunAt: daysAgo(ranDaysAgo),
 });
-const base = { defaultCompetitors: [] as string[], now, trackDays: 28, recheckDays: 7, maxSets: 20 };
+const base = { defaultCompetitors: [] as string[], now, recheckDays: 7 };
 
 test('competitorKeyOf is order-, case- and duplicate-insensitive', () => {
   assert.equal(competitorKeyOf(['b.com', 'A.com', 'b.com', ' ']), 'a.com,b.com');
@@ -37,16 +37,6 @@ test('due exactly when the latest brief is 7 days old, not before', () => {
   assert.equal(at(6).nextCheck, new Date(daysAgo(6).getTime() + 7 * DAY).toISOString());
 });
 
-test('tracking lasts 28 days after the last dashboard run, then stops', () => {
-  const sets = computeTrackedSets({
-    ...base,
-    userRuns: [run(['fresh.com'], 27), run(['expired.com'], 29)],
-    lastBriefAt: new Map(),
-  });
-  assert.deepEqual(sets.map(s => s.competitorKey), ['fresh.com']);
-  assert.equal(sets[0].trackedUntil, new Date(daysAgo(27).getTime() + 28 * DAY).toISOString());
-});
-
 test('the honeypot is never tracked, even inside a mixed set', () => {
   const sets = computeTrackedSets({
     ...base,
@@ -54,12 +44,6 @@ test('the honeypot is never tracked, even inside a mixed set', () => {
     lastBriefAt: new Map(),
   });
   assert.deepEqual(sets.map(s => s.competitorKey), ['goodr.com']);
-});
-
-test('at most maxSets user sets, keeping the most recently run', () => {
-  const userRuns = Array.from({ length: 5 }, (_, i) => run([`s${i}.com`], i + 1)); // s0 newest
-  const sets = computeTrackedSets({ ...base, maxSets: 3, userRuns, lastBriefAt: new Map() });
-  assert.deepEqual(sets.map(s => s.competitorKey), ['s0.com', 's1.com', 's2.com']);
 });
 
 test('COMPETITOR_STORES is an extra set, tracked indefinitely, not double-counted', () => {
@@ -71,7 +55,6 @@ test('COMPETITOR_STORES is an extra set, tracked indefinitely, not double-counte
   });
   const def = sets.find(s => s.origin === 'default')!;
   assert.equal(def.competitorKey, 'allbirds.com');
-  assert.equal(def.trackedUntil, null);
 
   const overlap = computeTrackedSets({ ...base, defaultCompetitors: ['goodr.com'], userRuns: [run(['goodr.com'], 1)], lastBriefAt: new Map() });
   assert.equal(overlap.length, 1);
@@ -116,4 +99,28 @@ test('a blocked, never-read store stays tracked as first-read-pending, retried d
   assert.equal(sets[0].nextCheck, new Date(daysAgo(0.5).getTime() + DAY).toISOString());
   const dayLater = computeTrackedSets({ ...base, userRuns: [run(['blocked.com'], 3)], lastBriefAt: new Map([['blocked.com', daysAgo(1)]]), scrapedStores: new Set(), pendingKeys: new Set(['blocked.com']) });
   assert.equal(dayLater[0].due, true);
+});
+
+test('watching is indefinite: a store added long ago is still watched, with no cap', () => {
+  const userRuns = Array.from({ length: 30 }, (_, i) => run([`s${i}.com`], 10 + i * 20)); // up to ~590 days ago
+  const sets = computeTrackedSets({ ...base, userRuns, lastBriefAt: new Map() });
+  assert.equal(sets.length, 30);
+  assert.ok(sets.every(s => s.due));
+});
+
+test('watchlist: paused stays watched but is never due; removed is not watched', () => {
+  const runs = [run(['a.com'], 300), run(['b.com'], 3), run(['c.com'], 3)];
+  const watch = new Map([
+    ['b.com', { state: 'paused' as const }],
+    ['c.com', { state: 'removed' as const }],
+  ]);
+  const sets = computeTrackedSets({ ...base, userRuns: runs, lastBriefAt: new Map(), watch });
+  const by = new Map(sets.map(s => [s.competitorKey, s]));
+  assert.equal(by.get('a.com')?.due, true);
+  assert.equal(by.get('b.com')?.paused, true);
+  assert.equal(by.get('b.com')?.due, false);
+  assert.equal(by.has('c.com'), false);
+  assert.deepEqual(dueFirst(sets).map(s => s.competitorKey), ['a.com']);
+  // a removed default set is dropped too
+  assert.equal(computeTrackedSets({ ...base, defaultCompetitors: ['e.com'], userRuns: [], lastBriefAt: new Map(), watch: new Map([['e.com', { state: 'removed' as const }]]) }).length, 0);
 });

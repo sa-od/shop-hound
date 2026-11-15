@@ -13,6 +13,10 @@ export const SNAPSHOT_PARTS = 'snapshot_parts';
 export const PRODUCT_VECTORS = 'product_vectors';
 export const BRIEFS = 'briefs';
 export const RUNS = 'runs';
+/** Per-store watch state: paused, removed, or "keep watching" (see watchlist.ts). One doc per store key. */
+export const WATCHLIST = 'watchlist';
+/** Queue-wide state, e.g. a pause after a failure on our side (see runs.ts). */
+export const QUEUE_STATE = 'queue_state';
 /** Shared pauses after a rate limit (see throttle.ts). */
 export const THROTTLE = 'throttle';
 

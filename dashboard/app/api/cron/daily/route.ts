@@ -9,8 +9,9 @@ export const maxDuration = 300;
 /**
  * Daily re-check, invoked by Vercel Cron (dashboard/vercel.json, 09:00 UTC).
  *
- * Every store a user analysed from the dashboard is tracked for 28 days (see
- * lib/server/tracking.ts). Each day this queues the stores that are DUE —
+ * Every store a user added from the dashboard is watched until they pause or
+ * remove it (see lib/server/tracking.ts and watchlist.ts); paused and removed
+ * stores are never due. Each day this queues the stores that are DUE —
  * latest brief 7+ days old — oldest first, behind anything users queued, and
  * works through the queue for as long as this function may run. Stores that
  * don't fit stay queued (the next status poll or tomorrow's run picks them
