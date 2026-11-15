@@ -39,7 +39,9 @@ export function QueueList({ live, hideRunId }: { live: LiveState; hideRunId?: st
           )}
           <span className="min-w-0">
             <span className="font-semibold">{q.store}</span>{" "}
-            {q.status === "retrying" ? (
+            {q.status === "retrying" && q.failureKind === "ours" ? (
+              <span className="text-warn">on hold: a problem on our side, we’ll run it once it’s fixed</span>
+            ) : q.status === "retrying" ? (
               <>
                 <span className="text-warn">
                   <RetryPhrase iso={q.retryAt} before="waiting to try again" />

@@ -20,7 +20,8 @@ export default async function Home() {
       ) : (
         <ThisWeekView
           data={week}
-          watched={watched.map((s) => ({ store: s.store, competitorKey: s.competitorKey, paused: s.watching === "paused" }))}
+          // Paused stores aren't part of This week (backend leaves them out); they stay on My competitors.
+          watched={watched.filter((s) => s.watching === "active").map((s) => ({ store: s.store, competitorKey: s.competitorKey }))}
         />
       )}
     </main>

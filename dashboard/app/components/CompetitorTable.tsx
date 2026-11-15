@@ -31,6 +31,12 @@ function Latest({ s, run, live }: { s: StoreSummary; run?: RunSummary; live?: Qu
       </span>
     );
   if (live?.status === "queued") return <span className="text-ink-2">Waiting to be read</span>;
+  if (live?.status === "retrying" && live.failureKind === "ours")
+    return (
+      <span className="text-warn">
+        On hold: a problem on our side, not the store’s. <RetryPhrase iso={live.retryAt} before="Trying again" />
+      </span>
+    );
   if (live?.status === "retrying")
     return (
       <span className="text-warn">
@@ -55,7 +61,8 @@ function Latest({ s, run, live }: { s: StoreSummary; run?: RunSummary; live?: Qu
 function serverLive(s: StoreSummary): QueueItem | undefined {
   const base = { runId: `server-${s.competitorKey}`, store: s.store, position: 0, queuedAt: "" };
   if (s.reading) return { ...base, status: "running", step: s.reading.step ?? undefined };
-  if (s.retrying) return { ...base, status: "retrying", retryAt: s.retrying.retryAt, reason: s.retrying.reason ?? undefined };
+  if (s.retrying)
+    return { ...base, status: "retrying", retryAt: s.retrying.retryAt, reason: s.retrying.reason ?? undefined, failureKind: s.retrying.failureKind };
   if (s.queued) return { ...base, status: "queued" };
   return undefined;
 }
